@@ -82,6 +82,7 @@ export default function LaudoDetalhe() {
   const [analises, setAnalises] = useState<Analise[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [compartilhando, setCompartilhando] = useState(false);
   const [msg, setMsg] = useState('');
   const [idiomaSelecionado, setIdiomaSelecionado] = useState('pt-BR');
 
@@ -249,6 +250,42 @@ export default function LaudoDetalhe() {
     }
   }
 
+  async function compartilharPDF() {
+    if (!laudo) return;
+    setCompartilhando(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Sessão expirada');
+
+      const res = await fetch(`/api/gerar-pdf/${id}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) throw new Error('Erro ao gerar PDF');
+
+      const blob = await res.blob();
+      const filename = `${laudo.numero}.pdf`;
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `Laudo ${laudo.numero}`,
+          text: `Laudo técnico — ${laudo.cliente}`,
+          files: [file],
+        });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      alert(`Erro: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCompartilhando(false);
+    }
+  }
+
   // ── Render helpers ────────────────────────────────────────────
   if (loading) {
     return (
@@ -315,6 +352,18 @@ export default function LaudoDetalhe() {
               <span className="sm:hidden">PDF</span>
               <span className="hidden sm:inline">Imprimir / PDF</span>
             </a>
+            <button
+              onClick={compartilharPDF}
+              disabled={compartilhando}
+              className="rounded-full border border-sky-700/60 bg-sky-900/40 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-sky-200 transition hover:border-sky-500 hover:bg-sky-900/70 whitespace-nowrap disabled:opacity-50"
+            >
+              {compartilhando ? '...' : (
+                <>
+                  <span className="sm:hidden">⤴</span>
+                  <span className="hidden sm:inline">⤴ Compartilhar</span>
+                </>
+              )}
+            </button>
             {!finalizado && (
               <button
                 onClick={handleFinalizar}

@@ -53,7 +53,7 @@ export default function ImprimirLaudo() {
   const [loading, setLoading] = useState(true);
   const [gerando, setGerando] = useState(false);
 
-  async function baixarPDF() {
+  async function baixarPDF(modo: 'download' | 'share' = 'download') {
     if (!laudo) return;
     setGerando(true);
     try {
@@ -227,11 +227,33 @@ export default function ImprimirLaudo() {
       doc.setFont('courier','normal'); tc(107,114,128);
       doc.text(laudo.numero, W-M, SY+20, { align:'right' });
 
-      doc.save(`${laudo.numero}.pdf`);
+      const blob = doc.output('blob');
+      const filename = `${laudo.numero}.pdf`;
+
+      if (modo === 'share') {
+        const file = new File([blob], filename, { type: 'application/pdf' });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            title: `Laudo ${laudo.numero}`,
+            text: `Laudo técnico — ${laudo.cliente}`,
+            files: [file],
+          });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = filename; a.click();
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
 
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      alert(`Erro ao gerar PDF: ${msg}`);
+      if (err instanceof Error && err.name === 'AbortError') return;
+      alert(`Erro: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setGerando(false);
     }
@@ -305,19 +327,25 @@ export default function ImprimirLaudo() {
       {/* Toolbar – hidden when printing */}
       <div className="no-print fixed top-4 right-4 z-50 flex gap-2">
         <button
-          onClick={baixarPDF}
+          onClick={() => baixarPDF('download')}
           disabled={gerando}
           className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow disabled:opacity-60"
         >
-          {gerando ? 'Gerando PDF...' : '⬇ Baixar PDF'}
+          {gerando ? 'Gerando...' : '⬇ Baixar PDF'}
+        </button>
+        <button
+          onClick={() => baixarPDF('share')}
+          disabled={gerando}
+          className="bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow disabled:opacity-60"
+        >
+          {gerando ? 'Gerando...' : '⤴ Compartilhar'}
         </button>
         <button
           onClick={() => window.print()}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow"
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow hidden sm:block"
         >
           Imprimir
         </button>
-
         <button
           onClick={() => window.close()}
           className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm"
