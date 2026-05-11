@@ -191,7 +191,7 @@ export default function Home() {
             <span className="text-sm text-slate-400 hidden sm:inline">{user.email}</span>
             <Link
               href="/admin/templates"
-              className="text-xs text-slate-500 hover:text-slate-300 transition hidden sm:inline"
+              className="text-xs text-slate-500 hover:text-slate-300 transition"
             >
               Admin
             </Link>
@@ -356,7 +356,7 @@ export default function Home() {
                           <Link href={`/laudos/${laudo.id}`} className="text-sky-300 hover:text-sky-200 whitespace-nowrap">
                             Abrir
                           </Link>
-                          <button onClick={() => handleDuplicar(laudo.id)} className="text-slate-400 hover:text-slate-100 hidden sm:inline whitespace-nowrap">
+                          <button onClick={() => handleDuplicar(laudo.id)} className="text-slate-400 hover:text-slate-100 whitespace-nowrap">
                             Duplicar
                           </button>
                           <button onClick={() => handleDeletar(laudo.id)} className="text-rose-300 hover:text-rose-200 whitespace-nowrap">

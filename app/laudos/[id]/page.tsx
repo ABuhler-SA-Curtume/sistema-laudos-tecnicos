@@ -310,9 +310,10 @@ export default function LaudoDetalhe() {
               href={`/laudos/${id}/imprimir`}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-slate-200 transition hover:border-slate-500 whitespace-nowrap hidden sm:inline-flex"
+              className="rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-slate-200 transition hover:border-slate-500 whitespace-nowrap"
             >
-              Imprimir / PDF
+              <span className="sm:hidden">PDF</span>
+              <span className="hidden sm:inline">Imprimir / PDF</span>
             </a>
             {!finalizado && (
               <button
