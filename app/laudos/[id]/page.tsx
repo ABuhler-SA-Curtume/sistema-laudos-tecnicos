@@ -16,11 +16,13 @@ import {
   // uploadFoto, — REMOVIDO: fotos desabilitadas temporariamente
 } from '@/lib/laudosServiceSupabase';
 import { avaliarStatus, calcularStatusGeral } from '@/lib/avaliarAnalise';
+import LogoAbuhler from '@/components/LogoAbuhler';
 
 type Analise = {
   id: string;
   nome: string;
   specification: string;
+  unidade: string;
   norma: string;
   tipo_foto: 'required' | 'optional' | 'none';
   resultado: string;
@@ -36,6 +38,10 @@ type Laudo = {
   cor: string;
   op: string;
   responsavel: string;
+  codigo_item: string;
+  ordem_compra: string;
+  metragem: string;
+  lotes: string;
   status: string;
   observacoes: string;
   criado_em: string;
@@ -88,26 +94,35 @@ export default function LaudoDetalhe() {
   const [novaAnalise, setNovaAnalise] = useState(BLANK_ANALISE);
   const [adicionando, setAdicionando] = useState(false);
 
+  const saveDebounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   // Removed: Photo upload state per analysis id
   // const [uploading, setUploading] = useState<Record<string, boolean>>({});
   // const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.replace('/');
-      else if (id) carregar();
-    });
-  }, [id, router]);
+    let mounted = true;
 
-  async function carregar() {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      if (!session) router.replace('/');
+      else if (id) carregar(mounted);
+    });
+
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function carregar(mounted = true) {
     setLoading(true);
     try {
       const [l, a] = await Promise.all([getLaudo(id), getAnalises(id)]);
+      if (!mounted) return;
       setLaudo(l);
       setAnalises(a);
       setInfoForm(l);
     } finally {
-      setLoading(false);
+      if (mounted) setLoading(false);
     }
   }
 
@@ -156,13 +171,18 @@ export default function LaudoDetalhe() {
     }
   }
 
-  async function handleResultadoChange(analise: Analise, valor: string) {
+  function handleResultadoChange(analise: Analise, valor: string) {
     const status = avaliarStatus(valor, analise.specification);
     const updated = { ...analise, resultado: valor, status_analise: status };
 
+    // Atualiza UI imediatamente (otimista)
     setAnalises((prev) => prev.map((a) => (a.id === analise.id ? updated : a)));
 
-    await atualizarAnalise(analise.id, { resultado: valor, status_analise: status });
+    // Salva no Supabase só após 600ms sem digitar
+    if (saveDebounceRefs.current[analise.id]) clearTimeout(saveDebounceRefs.current[analise.id]);
+    saveDebounceRefs.current[analise.id] = setTimeout(() => {
+      atualizarAnalise(analise.id, { resultado: valor, status_analise: status });
+    }, 600);
   }
 
   async function handleDeletarAnalise(analiseId: string) {
@@ -255,16 +275,13 @@ export default function LaudoDetalhe() {
     );
   }
 
-  const statusGeral =
-    laudo.status === 'draft'
-      ? calcularStatusGeral(
-          analises.map((a) => ({
-            resultado: a.resultado,
-            specification: a.specification,
-            status_analise: a.status_analise,
-          }))
-        )
-      : (laudo.status as 'approved' | 'rejected' | 'draft');
+  const statusGeral = calcularStatusGeral(
+    analises.map((a) => ({
+      resultado: a.resultado,
+      specification: a.specification,
+      status_analise: a.status_analise,
+    }))
+  );
 
   const finalizado = laudo.status !== 'draft';
 
@@ -274,18 +291,26 @@ export default function LaudoDetalhe() {
 
       {/* Nav */}
       <nav className="relative mb-6 border-b border-slate-800/90 bg-slate-950/95 px-4 py-4 backdrop-blur-xl print:hidden">
-        <div className="max-w-5xl mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-            <Link href="/" className="text-sky-300 hover:text-sky-200">Dashboard</Link>
-            <span>/</span>
-            <span className="font-mono font-semibold text-white">{laudo.numero}</span>
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-sm text-slate-400 min-w-0">
+            <Link href="/">
+              <LogoAbuhler height={28} invertido />
+            </Link>
+            <span className="text-slate-600 hidden sm:inline">/</span>
+            <span className="font-mono font-semibold text-white hidden sm:inline">{laudo.numero}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link
+              href="/"
+              className="rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-slate-200 transition hover:border-slate-500 whitespace-nowrap"
+            >
+              ← Início
+            </Link>
             <a
               href={`/laudos/${id}/imprimir`}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-full border border-slate-700/80 bg-slate-900/95 px-4 py-2 text-sm text-slate-200 transition hover:border-slate-500"
+              className="rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-slate-200 transition hover:border-slate-500 whitespace-nowrap hidden sm:inline-flex"
             >
               Imprimir / PDF
             </a>
@@ -367,6 +392,10 @@ export default function LaudoDetalhe() {
                     ['cor', 'Cor'],
                     ['op', 'OP'],
                     ['responsavel', 'Responsável'],
+                    ['codigo_item', 'Código do item'],
+                    ['ordem_compra', 'Ordem de compra'],
+                    ['metragem', 'Metragem'],
+                    ['lotes', 'Lotes'],
                   ] as [keyof Laudo, string][]
                 ).map(([field, label]) => (
                   <label key={field} className="block">
@@ -415,6 +444,10 @@ export default function LaudoDetalhe() {
                 ['Cor', laudo.cor],
                 ['OP', laudo.op],
                 ['Responsável', laudo.responsavel],
+                ...(laudo.codigo_item ? [['Código do item', laudo.codigo_item]] : []),
+                ...(laudo.ordem_compra ? [['Ordem de compra', laudo.ordem_compra]] : []),
+                ...(laudo.metragem ? [['Metragem', laudo.metragem]] : []),
+                ...(laudo.lotes ? [['Lotes', laudo.lotes]] : []),
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</dt>
@@ -539,6 +572,7 @@ export default function LaudoDetalhe() {
                         </div>
                         <p className="mt-2 text-xs text-slate-400">
                           Esp: <span className="font-mono text-slate-200">{analise.specification || '—'}</span>
+                          {analise.unidade && <span className="text-amber-400/80 font-mono"> · {analise.unidade}</span>}
                           {analise.norma && ` · ${analise.norma}`}
                           {' · '}
                           <span className={fotoInfo.cls}>{fotoInfo.label}</span>
@@ -557,10 +591,13 @@ export default function LaudoDetalhe() {
                               placeholder="0.0"
                               className="w-24 rounded-xl border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                             />
+                            {analise.unidade && (
+                              <span className="text-xs text-amber-400/80 font-mono">{analise.unidade}</span>
+                            )}
                           </div>
                         ) : (
                           <p className="text-sm font-mono font-semibold text-slate-100">
-                            {analise.resultado || '—'}
+                            {analise.resultado || '—'}{analise.unidade ? ` ${analise.unidade}` : ''}
                           </p>
                         )}
                         {!finalizado && (
@@ -607,6 +644,29 @@ export default function LaudoDetalhe() {
               </div>
             )}
 
+            {/* Progress bar */}
+            {!finalizado && (() => {
+              const comResultado = analises.filter((a) => a.resultado).length;
+              const total = analises.length;
+              const pct = Math.round((comResultado / total) * 100);
+              return (
+                <div className="mb-6">
+                  <div className="flex justify-between text-xs text-slate-400 mb-2">
+                    <span>Resultados preenchidos</span>
+                    <span>{comResultado} / {total}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-800/80 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
             <div
               className={`rounded-[1.75rem] p-6 text-center ${
                 statusGeral === 'approved'
@@ -623,6 +683,11 @@ export default function LaudoDetalhe() {
                   ? '❌ LAUDO REPROVADO'
                   : '⏳ AGUARDANDO RESULTADOS'}
               </p>
+              {finalizado && laudo.finalizado_em && (
+                <p className="mt-2 text-sm text-white/70">
+                  Finalizado em {new Date(laudo.finalizado_em).toLocaleDateString('pt-BR')}
+                </p>
+              )}
               {!finalizado && statusGeral !== 'draft' && (
                 <button
                   onClick={handleFinalizar}
@@ -631,6 +696,11 @@ export default function LaudoDetalhe() {
                 >
                   {salvando ? 'Finalizando...' : 'Finalizar e registrar'}
                 </button>
+              )}
+              {!finalizado && statusGeral === 'draft' && (
+                <p className="mt-3 text-sm text-white/60">
+                  Preencha todos os resultados para finalizar
+                </p>
               )}
             </div>
           </section>

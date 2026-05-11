@@ -31,7 +31,8 @@ export default function NovoLaudo() {
 
   // Passo 1 — dados básicos
   const [info, setInfo] = useState({
-    cliente: '', artigo: '', cor: '', op: '', responsavel: '', observacoes: '',
+    cliente: '', artigo: '', cor: '', op: '', responsavel: 'Cristiano Luis Backes',
+    codigo_item: '', ordem_compra: '', metragem: '', lotes: '', observacoes: '',
   });
 
   // Passo 2 — base de análises
@@ -41,23 +42,30 @@ export default function NovoLaudo() {
   const [novaAnalise, setNovaAnalise] = useState(BLANK_ANALISE);
 
   // ── Carregar bases de análises dinâmicas ──
-  useEffect(() => {
-    async function carregarTemplates() {
-      setCarregandoTemplates(true);
-      try {
-        const dados = await listarTemplates();
-        setTemplates(dados);
-      } catch (err) {
-        setErro(err.message || 'Erro ao carregar bases de análises');
-      } finally {
-        setCarregandoTemplates(false);
-      }
+  async function carregarTemplates() {
+    setCarregandoTemplates(true);
+    try {
+      const dados = await listarTemplates();
+      setTemplates(dados);
+    } catch (err) {
+      setErro(err.message || 'Erro ao carregar bases de análises');
+    } finally {
+      setCarregandoTemplates(false);
     }
+  }
 
-    if (user) {
-      carregarTemplates();
-    }
+  useEffect(() => {
+    if (user) carregarTemplates();
   }, [user]);
+
+  // Recarrega templates ao voltar para esta aba (ex: após criar template em nova aba)
+  useEffect(() => {
+    function handleFocus() {
+      if (user && passo === 2) carregarTemplates();
+    }
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user, passo]);
 
   if (loading) {
     return (
@@ -217,11 +225,15 @@ export default function NovoLaudo() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[
-                { field: 'cliente',     label: 'Cliente',     req: true,  icon: '🏢' },
-                { field: 'artigo',      label: 'Artigo',      req: true,  icon: '📦' },
-                { field: 'cor',         label: 'Cor',         req: false, icon: '🎨' },
-                { field: 'op',          label: 'OP',          req: false, icon: '🔢' },
-                { field: 'responsavel', label: 'Responsável', req: false, icon: '👤' },
+                { field: 'cliente',      label: 'Cliente',          req: true,  icon: '🏢' },
+                { field: 'artigo',       label: 'Artigo',           req: true,  icon: '📦' },
+                { field: 'cor',          label: 'Cor',              req: false, icon: '🎨' },
+                { field: 'op',           label: 'OP',               req: false, icon: '🔢' },
+                { field: 'responsavel',  label: 'Responsável',      req: false, icon: '👤' },
+                { field: 'codigo_item',  label: 'Código do item',   req: false, icon: '🏷️' },
+                { field: 'ordem_compra', label: 'Ordem de compra',  req: false, icon: '📋' },
+                { field: 'metragem',     label: 'Metragem',         req: false, icon: '📏' },
+                { field: 'lotes',        label: 'Lotes',            req: false, icon: '🗂️' },
               ].map(({ field, label, req, icon }) => (
                 <label key={field} className="block">
                   <span className="text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
@@ -284,8 +296,8 @@ export default function NovoLaudo() {
               ) : templates.length === 0 ? (
                 <div className="text-center py-12 rounded-[1.75rem] border border-slate-800/80 bg-slate-900/80">
                   <p className="text-slate-400 text-sm mb-4">Nenhuma base de análises disponível</p>
-                  <Link href="/admin/templates" className="button-primary px-6 py-2 text-sm">
-                    Criar primeira base de análises
+                  <Link href="/admin/templates" target="_blank" rel="noopener" className="button-primary px-6 py-2 text-sm">
+                    Criar primeira base de análises ↗
                   </Link>
                 </div>
               ) : (
@@ -315,15 +327,29 @@ export default function NovoLaudo() {
               )}
 
               {/* Botão para criar nova base de análises */}
-              <div className="border-t border-slate-800/50 pt-6">
-                <p className="text-xs text-slate-400 mb-3">Não encontrou a base de análises ideal?</p>
-                <Link
-                  href="/admin/templates"
-                  className="inline-flex items-center gap-2 button-primary px-6 py-3 text-sm font-semibold shadow-lg shadow-emerald-500/20"
+              <div className="border-t border-slate-800/50 pt-6 flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-xs text-slate-400 mb-3">Não encontrou a base de análises ideal?</p>
+                  <Link
+                    href="/admin/templates"
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-2 button-primary px-6 py-3 text-sm font-semibold shadow-lg shadow-emerald-500/20"
+                  >
+                    <span>+</span>
+                    Criar nova base de análises ↗
+                  </Link>
+                </div>
+                <button
+                  onClick={carregarTemplates}
+                  disabled={carregandoTemplates}
+                  className="button-secondary px-4 py-2 text-xs font-semibold text-slate-400 flex items-center gap-2 disabled:opacity-50"
                 >
-                  <span>+</span>
-                  Criar nova base de análises
-                </Link>
+                  {carregandoTemplates ? (
+                    <span className="animate-spin inline-block w-3 h-3 border border-slate-400 border-t-transparent rounded-full" />
+                  ) : '↺'}
+                  Recarregar lista
+                </button>
               </div>
             </section>
 

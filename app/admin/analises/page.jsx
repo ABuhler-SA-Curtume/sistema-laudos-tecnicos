@@ -10,6 +10,7 @@ import {
   deletarCatalogoAnalise,
   listarNormas,
 } from '@/lib/laudosServiceSupabase';
+import LogoAbuhler from '@/components/LogoAbuhler';
 
 const TIPO_FOTO_LABEL = {
   required: 'Foto obrigatória',
@@ -23,7 +24,7 @@ const TIPO_FOTO_BADGE = {
   none: 'bg-slate-800/50 text-slate-500',
 };
 
-const BLANK = { nome: '', norma_id: '', specification: '', tipo_foto: 'optional' };
+const BLANK = { nome: '', norma_id: '', specification: '', unidade: '', tipo_foto: 'optional' };
 
 export default function AdminAnalises() {
   const { user, loading } = useAuth();
@@ -82,6 +83,7 @@ export default function AdminAnalises() {
       nome: analise.nome,
       norma_id: analise.norma?.id || '',
       specification: analise.specification || '',
+      unidade: analise.unidade || '',
       tipo_foto: analise.tipo_foto || 'optional',
     });
     setEditandoId(analise.id);
@@ -103,6 +105,7 @@ export default function AdminAnalises() {
       norma_id: normaId,
       nome: norma ? (norma.descricao || norma.codigo) : f.nome,
       specification: norma?.specification ?? f.specification,
+      unidade: norma?.unidade ?? f.unidade,
     }));
   }
 
@@ -115,9 +118,9 @@ export default function AdminAnalises() {
     setErro('');
     try {
       if (editandoId) {
-        await atualizarCatalogoAnalise(editandoId, form.nome, form.norma_id || null, form.specification, form.tipo_foto);
+        await atualizarCatalogoAnalise(editandoId, form.nome, form.norma_id || null, form.specification, form.tipo_foto, form.unidade);
       } else {
-        await criarCatalogoAnalise(form.nome, form.norma_id || null, form.specification, form.tipo_foto);
+        await criarCatalogoAnalise(form.nome, form.norma_id || null, form.specification, form.tipo_foto, form.unidade);
       }
       cancelar();
       await carregar(filtro);
@@ -150,6 +153,7 @@ export default function AdminAnalises() {
         <div className="mb-8 flex items-start justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-sky-400/70">Administração</p>
+            <LogoAbuhler height={44} invertido className="mb-1" />
             <h1 className="text-4xl font-bold text-slate-100 mt-1">Catálogo de Análises</h1>
             <p className="text-slate-400 text-sm mt-1">
               Análises padrão reutilizáveis nas bases de análises
@@ -218,11 +222,14 @@ export default function AdminAnalises() {
                           📚 {a.norma.codigo}{a.norma.descricao ? ` — ${a.norma.descricao}` : ''}
                         </p>
                       )}
-                      {a.specification && (
-                        <p className="text-sky-400/80 text-xs font-mono mt-1">
-                          Spec: {a.specification}
-                        </p>
-                      )}
+                      <div className="flex gap-4 mt-1 flex-wrap">
+                        {a.specification && (
+                          <p className="text-sky-400/80 text-xs font-mono">Spec: {a.specification}</p>
+                        )}
+                        {a.unidade && (
+                          <p className="text-amber-400/80 text-xs font-mono">Unid: {a.unidade}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -286,10 +293,20 @@ export default function AdminAnalises() {
                   <label className="block text-sm font-semibold text-slate-300 mb-2">Specification</label>
                   <input
                     type="text"
-                    placeholder="ex: >3.5"
+                    placeholder="ex: ≥150"
                     value={form.specification}
                     onChange={(e) => setForm({ ...form, specification: e.target.value })}
                     className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:font-sans placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">Unidade de medida</label>
+                  <input
+                    type="text"
+                    placeholder="ex: N, ciclos, flexões"
+                    value={form.unidade}
+                    onChange={(e) => setForm({ ...form, unidade: e.target.value })}
+                    className="input-dark w-full rounded-2xl px-4 py-3 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                   />
                 </div>
               </div>

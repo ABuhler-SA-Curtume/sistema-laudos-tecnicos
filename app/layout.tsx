@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,8 +13,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Laudos Técnicos | Painel",
+  title: "Laudos Técnicos | A. Bühler",
   description: "Sistema profissional de gestão de laudos técnicos com interface escura e moderna.",
+  icons: {
+    icon: '/logo-abuhler.png',
+    apple: '/logo-abuhler.png',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Laudos A.Bühler',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#020617',
 };
 
 export default function RootLayout({

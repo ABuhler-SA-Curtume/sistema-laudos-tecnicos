@@ -10,6 +10,7 @@ import {
   deletarTemplate,
   clonarTemplate,
 } from '@/lib/laudosServiceSupabase';
+import LogoAbuhler from '@/components/LogoAbuhler';
 
 const COR_MAP = {
   blue: { bg: 'border-sky-500/20 bg-sky-500/10', badge: 'bg-sky-500/15 text-sky-300', btn: 'ring-sky-500/50' },
@@ -147,6 +148,7 @@ export default function AdminTemplates() {
         <div className="mb-8 flex items-start justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-sky-400/70">Administração</p>
+            <LogoAbuhler height={44} invertido className="mb-1" />
             <h1 className="text-4xl font-bold tracking-tight text-white flex items-center gap-3">
               📋 Gerenciar bases de análises
             </h1>

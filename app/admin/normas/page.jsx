@@ -9,6 +9,7 @@ import {
   atualizarNorma,
   deletarNorma,
 } from '@/lib/laudosServiceSupabase';
+import LogoAbuhler from '@/components/LogoAbuhler';
 
 export default function AdminNormas() {
   const { user, loading } = useAuth();
@@ -22,6 +23,7 @@ export default function AdminNormas() {
   const [codigo, setCodigo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [specification, setSpecification] = useState('');
+  const [unidade, setUnidade] = useState('');
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [confirmandoDelete, setConfirmandoDelete] = useState(null);
@@ -57,6 +59,7 @@ export default function AdminNormas() {
     setCodigo('');
     setDescricao('');
     setSpecification('');
+    setUnidade('');
     setEditandoId(null);
     setErro('');
     setMostrando('editar');
@@ -66,6 +69,7 @@ export default function AdminNormas() {
     setCodigo(norma.codigo);
     setDescricao(norma.descricao || '');
     setSpecification(norma.specification || '');
+    setUnidade(norma.unidade || '');
     setEditandoId(norma.id);
     setErro('');
     setMostrando('editar');
@@ -76,6 +80,7 @@ export default function AdminNormas() {
     setCodigo('');
     setDescricao('');
     setSpecification('');
+    setUnidade('');
     setEditandoId(null);
     setErro('');
   }
@@ -89,9 +94,9 @@ export default function AdminNormas() {
     setErro('');
     try {
       if (editandoId) {
-        await atualizarNorma(editandoId, codigo, descricao, specification);
+        await atualizarNorma(editandoId, codigo, descricao, specification, unidade);
       } else {
-        await criarNorma(codigo, descricao, specification);
+        await criarNorma(codigo, descricao, specification, unidade);
       }
       cancelarEdicao();
       await carregarNormas(filtro);
@@ -129,6 +134,7 @@ export default function AdminNormas() {
         <div className="mb-8 flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-sky-400/70">Administração</p>
+            <LogoAbuhler height={44} invertido className="mb-1" />
             <h1 className="text-4xl font-bold text-slate-100 mt-1">Normas</h1>
           </div>
           <Link href="/admin/templates" className="text-sm text-slate-400 hover:text-slate-200 transition">
@@ -182,11 +188,18 @@ export default function AdminNormas() {
                       {norma.descricao && (
                         <p className="text-slate-400 text-sm mt-0.5">{norma.descricao}</p>
                       )}
-                      {norma.specification && (
-                        <p className="text-sky-400/80 text-xs font-mono mt-1">
-                          Spec padrão: {norma.specification}
-                        </p>
-                      )}
+                      <div className="flex gap-4 mt-1 flex-wrap">
+                        {norma.specification && (
+                          <p className="text-sky-400/80 text-xs font-mono">
+                            Spec: {norma.specification}
+                          </p>
+                        )}
+                        {norma.unidade && (
+                          <p className="text-amber-400/80 text-xs font-mono">
+                            Unidade: {norma.unidade}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -243,21 +256,35 @@ export default function AdminNormas() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Specification padrão
-                </label>
-                <input
-                  type="text"
-                  placeholder="ex: >3.5 ou ≥ 4 ou = 100"
-                  value={specification}
-                  onChange={(e) => setSpecification(e.target.value)}
-                  className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:text-slate-500 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                />
-                <p className="text-xs text-slate-500 mt-1.5">
-                  Será auto-preenchida ao adicionar esta norma em uma base de análises.
-                </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Specification padrão
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="ex: ≥150 ou >3.5"
+                    value={specification}
+                    onChange={(e) => setSpecification(e.target.value)}
+                    className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:text-slate-500 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Unidade de medida
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="ex: N, N/mm², ciclos, flexões"
+                    value={unidade}
+                    onChange={(e) => setUnidade(e.target.value)}
+                    className="input-dark w-full rounded-2xl px-4 py-3 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-slate-500 -mt-2">
+                Specification e unidade são auto-preenchidas ao usar esta norma.
+              </p>
 
               <div className="flex gap-3 pt-2">
                 <button
