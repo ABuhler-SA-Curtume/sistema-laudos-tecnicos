@@ -13,10 +13,14 @@ import {
   deletarAnalise,
   finalizarLaudo,
   IDIOMAS_DISPONIVEIS,
-  // uploadFoto, — REMOVIDO: fotos desabilitadas temporariamente
+  listarFotosLaudo,
+  uploadFotoLaudo,
+  atualizarLegendaFotoLaudo,
+  deletarFotoLaudo,
 } from '@/lib/laudosServiceSupabase';
 import { avaliarStatus, calcularStatusGeral } from '@/lib/avaliarAnalise';
 import LogoAbuhler from '@/components/LogoAbuhler';
+import SpecInput from '@/components/SpecInput';
 
 type Analise = {
   id: string;
@@ -47,6 +51,7 @@ type Laudo = {
   criado_em: string;
   finalizado_em: string | null;
   assinador_por: string | null;
+  idioma_pdf?: string | null;
 };
 
 const FOTO_LABELS = {
@@ -67,9 +72,17 @@ const STATUS_LABEL = {
   draft: 'RASCUNHO',
 };
 
+type LaudoFoto = {
+  id: string;
+  url: string;
+  caminho: string;
+  legenda: string | null;
+};
+
 const BLANK_ANALISE = {
   nome: '',
   specification: '',
+  unidade: '',
   norma: '',
   tipo_foto: 'optional' as 'required' | 'optional' | 'none',
 };
@@ -82,9 +95,11 @@ export default function LaudoDetalhe() {
   const [analises, setAnalises] = useState<Analise[]>([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [compartilhando, setCompartilhando] = useState(false);
   const [msg, setMsg] = useState('');
   const [idiomaSelecionado, setIdiomaSelecionado] = useState('pt-BR');
+  const [fotos, setFotos] = useState<LaudoFoto[]>([]);
+  const [uploadandoFoto, setUploadandoFoto] = useState(false);
+  const legendaDebounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Inline laudo edit
   const [editandoInfo, setEditandoInfo] = useState(false);
@@ -117,11 +132,13 @@ export default function LaudoDetalhe() {
   async function carregar(mounted = true) {
     setLoading(true);
     try {
-      const [l, a] = await Promise.all([getLaudo(id), getAnalises(id)]);
+      const [l, a, f] = await Promise.all([getLaudo(id), getAnalises(id), listarFotosLaudo(id)]);
       if (!mounted) return;
       setLaudo(l);
       setAnalises(a);
+      setFotos(f);
       setInfoForm(l);
+      if (l.idioma_pdf) setIdiomaSelecionado(l.idioma_pdf);
     } finally {
       if (mounted) setLoading(false);
     }
@@ -207,6 +224,74 @@ export default function LaudoDetalhe() {
   //   }
   // }
 
+  // ── Fotos do laudo ────────────────────────────────────────────
+  async function comprimirImagem(file: File): Promise<File> {
+    return new Promise((resolve) => {
+      const MAX = 1400;
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        try {
+          let w = img.width, h = img.height;
+          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+          canvas.toBlob(
+            (blob) => resolve(blob
+              ? new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })
+              : file
+            ),
+            'image/jpeg', 0.82
+          );
+        } catch {
+          resolve(file);
+        }
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file); // usa o arquivo original se compressão falhar
+      };
+
+      img.src = objectUrl;
+    });
+  }
+
+  async function handleUploadFotos(files: FileList) {
+    setUploadandoFoto(true);
+    try {
+      for (const file of Array.from(files)) {
+        const compressed = await comprimirImagem(file);
+        const nova = await uploadFotoLaudo(id, compressed);
+        setFotos((prev) => [...prev, nova]);
+      }
+    } catch (err: unknown) {
+      console.error('Erro upload foto:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Erro ao enviar foto:\n${msg}`);
+    } finally {
+      setUploadandoFoto(false);
+    }
+  }
+
+  function handleLegendaChange(fotoId: string, legenda: string) {
+    setFotos((prev) => prev.map((f) => f.id === fotoId ? { ...f, legenda } : f));
+    if (legendaDebounceRefs.current[fotoId]) clearTimeout(legendaDebounceRefs.current[fotoId]);
+    legendaDebounceRefs.current[fotoId] = setTimeout(() => {
+      atualizarLegendaFotoLaudo(fotoId, legenda);
+    }, 600);
+  }
+
+  async function handleDeletarFoto(fotoId: string, caminho: string) {
+    if (!confirm('Remover esta foto?')) return;
+    await deletarFotoLaudo(fotoId, caminho);
+    setFotos((prev) => prev.filter((f) => f.id !== fotoId));
+  }
+
   // ── Finalizar ─────────────────────────────────────────────────
   async function handleFinalizar() {
     if (!laudo) return;
@@ -247,42 +332,6 @@ export default function LaudoDetalhe() {
       alert(`Erro ao finalizar laudo: ${msg}`);
     } finally {
       setSalvando(false);
-    }
-  }
-
-  async function compartilharPDF() {
-    if (!laudo) return;
-    setCompartilhando(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Sessão expirada');
-
-      const res = await fetch(`/api/gerar-pdf/${id}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!res.ok) throw new Error('Erro ao gerar PDF');
-
-      const blob = await res.blob();
-      const filename = `${laudo.numero}.pdf`;
-      const file = new File([blob], filename, { type: 'application/pdf' });
-
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          title: `Laudo ${laudo.numero}`,
-          text: `Laudo técnico — ${laudo.cliente}`,
-          files: [file],
-        });
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      alert(`Erro: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setCompartilhando(false);
     }
   }
 
@@ -344,7 +393,7 @@ export default function LaudoDetalhe() {
               ← Início
             </Link>
             <a
-              href={`/laudos/${id}/imprimir`}
+              href={`/laudos/${id}/imprimir?lang=${idiomaSelecionado}`}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-full border border-slate-700/80 bg-slate-900/95 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-slate-200 transition hover:border-slate-500 whitespace-nowrap"
@@ -352,18 +401,6 @@ export default function LaudoDetalhe() {
               <span className="sm:hidden">PDF</span>
               <span className="hidden sm:inline">Imprimir / PDF</span>
             </a>
-            <button
-              onClick={compartilharPDF}
-              disabled={compartilhando}
-              className="rounded-full border border-sky-700/60 bg-sky-900/40 px-3 py-1.5 sm:px-4 sm:py-2 text-sm text-sky-200 transition hover:border-sky-500 hover:bg-sky-900/70 whitespace-nowrap disabled:opacity-50"
-            >
-              {compartilhando ? '...' : (
-                <>
-                  <span className="sm:hidden">⤴</span>
-                  <span className="hidden sm:inline">⤴ Compartilhar</span>
-                </>
-              )}
-            </button>
             {!finalizado && (
               <button
                 onClick={handleFinalizar}
@@ -540,10 +577,15 @@ export default function LaudoDetalhe() {
                   onChange={(e) => setNovaAnalise({ ...novaAnalise, nome: e.target.value })}
                   className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                 />
-                <input
-                  placeholder="Especificação (ex: >3.5)"
+                <SpecInput
                   value={novaAnalise.specification}
-                  onChange={(e) => setNovaAnalise({ ...novaAnalise, specification: e.target.value })}
+                  onChange={(v: string) => setNovaAnalise({ ...novaAnalise, specification: v })}
+                  className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:font-sans placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                />
+                <input
+                  placeholder="Unidade (ex: N, N/mm², ciclos)"
+                  value={novaAnalise.unidade}
+                  onChange={(e) => setNovaAnalise({ ...novaAnalise, unidade: e.target.value })}
                   className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                 />
                 <textarea
@@ -642,7 +684,7 @@ export default function LaudoDetalhe() {
                               className="w-24 rounded-xl border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                             />
                             {analise.unidade && (
-                              <span className="text-xs text-amber-400/80 font-mono">{analise.unidade}</span>
+                              <span className="text-xs font-mono text-amber-400/80">{analise.unidade}</span>
                             )}
                           </div>
                         ) : (
@@ -667,6 +709,80 @@ export default function LaudoDetalhe() {
           )}
         </section>
 
+        {/* Fotos do laudo */}
+        <section className="glass-card rounded-[2rem] border-slate-800/90 p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">
+              Registro Fotográfico ({fotos.length})
+            </h2>
+            <label className={`cursor-pointer text-sm font-semibold text-sky-300 transition hover:text-sky-200 ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
+              {uploadandoFoto ? 'Enviando...' : '+ Adicionar fotos'}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
+              />
+            </label>
+          </div>
+
+          {fotos.length === 0 ? (
+            <label className={`flex flex-col items-center justify-center rounded-[1.75rem] border-2 border-dashed border-slate-700/60 p-10 text-center cursor-pointer hover:border-sky-500/40 transition ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
+              <span className="text-3xl mb-3">📷</span>
+              <span className="text-slate-400 text-sm font-medium">Clique para adicionar fotos</span>
+              <span className="text-slate-600 text-xs mt-1">JPG, PNG · comprimidas automaticamente</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
+              />
+            </label>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {fotos.map((foto) => (
+                <div key={foto.id} className="group relative rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-900/80">
+                  <img
+                    src={foto.url}
+                    alt={foto.legenda || ''}
+                    className="w-full h-40 object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+                  />
+                  <div className="p-2">
+                    <input
+                      type="text"
+                      placeholder="Legenda (opcional)"
+                      value={foto.legenda || ''}
+                      onChange={(e) => handleLegendaChange(foto.id, e.target.value)}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-400/50 placeholder:text-slate-600"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleDeletarFoto(foto.id, foto.caminho)}
+                    className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-rose-300 opacity-0 group-hover:opacity-100 transition hover:bg-black/90"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {/* Botão de adicionar mais */}
+              <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-700/60 h-[196px] cursor-pointer hover:border-sky-500/40 transition ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
+                <span className="text-2xl text-slate-600">+</span>
+                <span className="text-xs text-slate-600 mt-1">Mais fotos</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
+                />
+              </label>
+            </div>
+          )}
+        </section>
+
         {/* Result summary */}
         {analises.length > 0 && (
           <section className="glass-card rounded-[2rem] border-slate-800/90 p-6">
@@ -679,7 +795,10 @@ export default function LaudoDetalhe() {
                   {IDIOMAS_DISPONIVEIS.map((idioma) => (
                     <button
                       key={idioma.codigo}
-                      onClick={() => setIdiomaSelecionado(idioma.codigo)}
+                      onClick={() => {
+                        setIdiomaSelecionado(idioma.codigo);
+                        if (laudo) atualizarLaudo(laudo.id, { idioma_pdf: idioma.codigo });
+                      }}
                       className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${
                         idiomaSelecionado === idioma.codigo
                           ? 'bg-sky-500/15 text-sky-300 border border-sky-500/20'

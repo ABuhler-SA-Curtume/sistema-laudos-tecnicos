@@ -106,7 +106,8 @@ export default function NovoLaudo() {
         id: a.id,
         nome: a.nome,
         norma: a.norma?.codigo || '',
-        specification: a.specification || '',
+        specification: a.specification || a.norma?.specification || '',
+        unidade: a.unidade || a.norma?.unidade || '',
         tipo_foto: a.tipo_foto || 'optional',
       }));
 
@@ -149,6 +150,7 @@ export default function NovoLaudo() {
             nome: a.nome,
             norma: a.norma,
             specification: a.specification,
+            unidade: a.unidade || null,
             tipo_foto: a.tipo_foto,
             resultado: null,
             status_analise: null,

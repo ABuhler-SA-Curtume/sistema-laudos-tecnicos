@@ -23,6 +23,12 @@ type Laudo = {
   op: string;
   status: 'draft' | 'approved' | 'rejected';
   criado_em: string;
+  idioma_pdf?: string | null;
+};
+
+const IDIOMA_FLAG: Record<string, string> = {
+  'pt-BR': '🇧🇷',
+  'en-US': '🇬🇧',
 };
 
 type Stats = {
@@ -347,9 +353,16 @@ export default function Home() {
                         {new Date(laudo.criado_em).toLocaleDateString('pt-BR')}
                       </td>
                       <td className="px-3 sm:px-4 py-3 sm:py-4">
-                        <span className={`inline-flex rounded-full px-2 sm:px-3 py-1 text-xs font-semibold whitespace-nowrap ${s.cls}`}>
-                          {s.label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex rounded-full px-2 sm:px-3 py-1 text-xs font-semibold whitespace-nowrap ${s.cls}`}>
+                            {s.label}
+                          </span>
+                          {laudo.idioma_pdf && IDIOMA_FLAG[laudo.idioma_pdf] && (
+                            <span className="text-base leading-none" title={laudo.idioma_pdf}>
+                              {IDIOMA_FLAG[laudo.idioma_pdf]}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 sm:px-4 py-3 sm:py-4">
                         <div className="flex gap-2 sm:gap-3 text-sm">
