@@ -88,8 +88,8 @@ export default function ImprimirLaudo() {
       const dataEmissao = new Date(laudo.finalizado_em ?? laudo.criado_em).toLocaleDateString(lang);
 
       const [logoImg, sigImg] = await Promise.all([
-        pdfLoadImage('/logo-abuhler.png'),
-        pdfLoadImage('/assinatura-cristiano.png'),
+        pdfLoadImage('/logo-abuhler.png',        { maxW: 300, maxH: 100 }),
+        pdfLoadImage('/assinatura-cristiano.png', { maxW: 500, maxH: 120 }),
       ]);
 
       const doc = new jsPDF({ format: 'a4', unit: 'mm', orientation: 'portrait' });
@@ -234,7 +234,7 @@ export default function ImprimirLaudo() {
         doc.text(t.registroFotografico, M, y); y += 5;
 
         const FW = 85, FH = 60, FGAP = 6;
-        const fotoImgs = await Promise.all(fotos.map(f => pdfLoadImage(f.url)));
+        const fotoImgs = await Promise.all(fotos.map(f => pdfLoadImage(f.url, { maxW: 900, format: 'jpeg', quality: 0.82 })));
 
         for (let i = 0; i < fotoImgs.length; i += 2) {
           const rowH = FH + (fotos[i]?.legenda || fotos[i+1]?.legenda ? 8 : 2);
@@ -678,18 +678,26 @@ function pdfSpecText(doc: any, text: string, cx: number, y: number, maxChars: nu
   doc.setFont('courier', 'normal');
 }
 
-async function pdfLoadImage(url: string): Promise<string | null> {
+async function pdfLoadImage(
+  url: string,
+  opts?: { maxW?: number; maxH?: number; format?: 'png' | 'jpeg'; quality?: number }
+): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
         const c = document.createElement('canvas');
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (opts?.maxW && w > opts.maxW) { h = Math.round(h * opts.maxW / w); w = opts.maxW; }
+        if (opts?.maxH && h > opts.maxH) { w = Math.round(w * opts.maxH / h); h = opts.maxH; }
+        c.width = w; c.height = h;
         const ctx = c.getContext('2d');
         if (!ctx) { resolve(null); return; }
-        ctx.drawImage(img, 0, 0);
-        resolve(c.toDataURL('image/png'));
+        ctx.drawImage(img, 0, 0, w, h);
+        const fmt = opts?.format === 'jpeg' ? 'image/jpeg' : 'image/png';
+        resolve(c.toDataURL(fmt, opts?.quality ?? 0.85));
       } catch { resolve(null); }
     };
     img.onerror = () => resolve(null);
