@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/useAuth';
-import { getLaudo, getAnalises, listarNormas, listarFotosLaudo } from '@/lib/laudosServiceSupabase';
+import { getLaudo, getAnalises, listarNormas } from '@/lib/laudosServiceSupabase';
 import { avaliarStatus, calcularStatusGeral } from '@/lib/avaliarAnalise';
 import { TRADUCOES, traduzirNomeAnalise, traduzirUnidade, type LaudoLang } from '@/lib/laudoTranslations';
 
@@ -17,13 +17,6 @@ type Analise = {
   resultado: string;
   status_analise: string | null;
   foto_url: string | null;
-};
-
-type LaudoFoto = {
-  id: string;
-  url: string;
-  caminho: string;
-  legenda: string | null;
 };
 
 type Laudo = {
@@ -55,7 +48,6 @@ export default function ImprimirLaudo() {
   const [laudo, setLaudo] = useState<Laudo | null>(null);
   const [analises, setAnalises] = useState<Analise[]>([]);
   const [normaMap, setNormaMap] = useState<Record<string, string>>({});
-  const [fotos, setFotos] = useState<LaudoFoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [gerando, setGerando] = useState(false);
   const [lang, setLang] = useState<LaudoLang>('pt-BR');
@@ -227,37 +219,30 @@ export default function ImprimirLaudo() {
         y += OH + 8;
       }
 
-      // ─── FOTOS ─────────────────────────────────────────────────────────────
-      if (fotos.length > 0) {
+      // ─── FOTOS POR ANÁLISE ──────────────────────────────────────────────────
+      const fotosAnalises = analises.filter(a => a.foto_url);
+      if (fotosAnalises.length > 0) {
         if (y+12 > 282) { doc.addPage(); y = M; }
         doc.setFont('helvetica','bold'); doc.setFontSize(7); tc(107,114,128);
         doc.text(t.registroFotografico, M, y); y += 5;
 
-        const FW = 85, FH = 60, FGAP = 6;
-        const fotoImgs = await Promise.all(fotos.map(f => pdfLoadImage(f.url, { maxW: 900, format: 'jpeg', quality: 0.82 })));
+        const FGAP = 5, FW = (CW - 2*FGAP) / 3, FH = FW;
+        const fotoImgs = await Promise.all(
+          fotosAnalises.map(a => pdfLoadImage(a.foto_url!, { maxW: 900, format: 'jpeg', quality: 0.82 }))
+        );
 
-        for (let i = 0; i < fotoImgs.length; i += 2) {
-          const rowH = FH + (fotos[i]?.legenda || fotos[i+1]?.legenda ? 8 : 2);
+        for (let i = 0; i < fotosAnalises.length; i += 3) {
+          const rowH = FH + 8;
           if (y + rowH > 282) { doc.addPage(); y = M; }
-
-          const img1 = fotoImgs[i];
-          const img2 = i+1 < fotoImgs.length ? fotoImgs[i+1] : null;
-
-          if (img1) {
-            doc.addImage(img1, 'JPEG', M, y, FW, FH);
-            if (fotos[i].legenda) {
-              doc.setFont('helvetica','normal'); doc.setFontSize(7); tc(107,114,128);
-              doc.text(pdfTrunc(fotos[i].legenda!, 28), M + FW/2, y + FH + 4, { align: 'center' });
-            }
+          for (let j = 0; j < 3 && i+j < fotosAnalises.length; j++) {
+            const img = fotoImgs[i+j];
+            const a = fotosAnalises[i+j];
+            const x = M + j*(FW+FGAP);
+            if (img) doc.addImage(img, 'JPEG', x, y, FW, FH);
+            doc.setFont('helvetica','normal'); doc.setFontSize(6.5); tc(107,114,128);
+            doc.text(pdfTrunc(traduzirNomeAnalise(a.nome, lang), 18), x + FW/2, y + FH + 4, { align: 'center' });
           }
-          if (img2) {
-            doc.addImage(img2, 'JPEG', M + FW + FGAP, y, FW, FH);
-            if (fotos[i+1].legenda) {
-              doc.setFont('helvetica','normal'); doc.setFontSize(7); tc(107,114,128);
-              doc.text(pdfTrunc(fotos[i+1].legenda!, 28), M + FW + FGAP + FW/2, y + FH + 4, { align: 'center' });
-            }
-          }
-          y += rowH + 4;
+          y += rowH + 3;
         }
         y += 4;
       }
@@ -307,10 +292,9 @@ export default function ImprimirLaudo() {
     if (!user) return;
     if (!id) return;
     (async () => {
-      const [l, a, normas, fs] = await Promise.all([getLaudo(id), getAnalises(id), listarNormas(), listarFotosLaudo(id)]);
+      const [l, a, normas] = await Promise.all([getLaudo(id), getAnalises(id), listarNormas()]);
       setLaudo(l);
       setAnalises(a);
-      setFotos(fs);
       const map: Record<string, string> = {};
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       normas.forEach((n: any) => { if (n.codigo && n.unidade) map[n.codigo] = n.unidade; });
@@ -573,23 +557,23 @@ export default function ImprimirLaudo() {
           </table>
         </div>
 
-        {/* Photos */}
-        {fotos.length > 0 && (
+        {/* Photos — per analysis */}
+        {analises.some(a => a.foto_url) && (
           <div className="mb-6">
             <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
               {t.registroFotografico}
             </h2>
             <div className="grid grid-cols-3 gap-4">
-              {fotos.map((foto) => (
-                <div key={foto.id} className="text-center">
+              {analises.filter(a => a.foto_url).map((a) => (
+                <div key={a.id} className="text-center">
                   <img
-                    src={foto.url}
-                    alt={foto.legenda || ''}
-                    className="w-full h-36 object-cover rounded border border-gray-200"
+                    src={a.foto_url!}
+                    alt={a.nome}
+                    className="w-full aspect-square object-cover rounded border border-gray-200"
                   />
-                  {foto.legenda && (
-                    <p className="text-xs text-gray-600 mt-1 font-medium">{foto.legenda}</p>
-                  )}
+                  <p className="text-xs text-gray-600 mt-1 font-medium">
+                    {traduzirNomeAnalise(a.nome, lang)}
+                  </p>
                 </div>
               ))}
             </div>

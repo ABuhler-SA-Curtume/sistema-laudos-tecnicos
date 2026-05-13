@@ -13,10 +13,7 @@ import {
   deletarAnalise,
   finalizarLaudo,
   IDIOMAS_DISPONIVEIS,
-  listarFotosLaudo,
-  uploadFotoLaudo,
-  atualizarLegendaFotoLaudo,
-  deletarFotoLaudo,
+  uploadFotoAnalise,
 } from '@/lib/laudosServiceSupabase';
 import { avaliarStatus, calcularStatusGeral } from '@/lib/avaliarAnalise';
 import LogoAbuhler from '@/components/LogoAbuhler';
@@ -72,13 +69,6 @@ const STATUS_LABEL = {
   draft: 'RASCUNHO',
 };
 
-type LaudoFoto = {
-  id: string;
-  url: string;
-  caminho: string;
-  legenda: string | null;
-};
-
 const BLANK_ANALISE = {
   nome: '',
   specification: '',
@@ -97,9 +87,7 @@ export default function LaudoDetalhe() {
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState('');
   const [idiomaSelecionado, setIdiomaSelecionado] = useState('pt-BR');
-  const [fotos, setFotos] = useState<LaudoFoto[]>([]);
-  const [uploadandoFoto, setUploadandoFoto] = useState(false);
-  const legendaDebounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [uploadingFoto, setUploadingFoto] = useState<Record<string, boolean>>({});
 
   // Inline laudo edit
   const [editandoInfo, setEditandoInfo] = useState(false);
@@ -132,11 +120,10 @@ export default function LaudoDetalhe() {
   async function carregar(mounted = true) {
     setLoading(true);
     try {
-      const [l, a, f] = await Promise.all([getLaudo(id), getAnalises(id), listarFotosLaudo(id)]);
+      const [l, a] = await Promise.all([getLaudo(id), getAnalises(id)]);
       if (!mounted) return;
       setLaudo(l);
       setAnalises(a);
-      setFotos(f);
       setInfoForm(l);
       if (l.idioma_pdf) setIdiomaSelecionado(l.idioma_pdf);
     } finally {
@@ -209,22 +196,7 @@ export default function LaudoDetalhe() {
     setAnalises((prev) => prev.filter((a) => a.id !== analiseId));
   }
 
-  // ── Foto ────────────────────────────────────────────────────── [DESABILITADO]
-  // async function handleFotoChange(analise: Analise, file: File) {
-  //   setUploading((prev) => ({ ...prev, [analise.id]: true }));
-  //   try {
-  //     const url = await uploadFoto(id, analise.id, file);
-  //     await atualizarAnalise(analise.id, { foto_url: url });
-  //     setAnalises((prev) => prev.map((a) => (a.id === analise.id ? { ...a, foto_url: url } : a)));
-  //     flash('Foto enviada.');
-  //   } catch (err: any) {
-  //     flash(`Erro: ${err.message}`);
-  //   } finally {
-  //     setUploading((prev) => ({ ...prev, [analise.id]: false }));
-  //   }
-  // }
-
-  // ── Fotos do laudo ────────────────────────────────────────────
+  // ── Fotos por análise ─────────────────────────────────────────
   async function comprimirImagem(file: File): Promise<File> {
     return new Promise((resolve) => {
       const MAX = 1400;
@@ -261,51 +233,36 @@ export default function LaudoDetalhe() {
     });
   }
 
-  async function handleUploadFotos(files: FileList) {
-    setUploadandoFoto(true);
+  async function handleFotoChange(analise: Analise, file: File) {
+    setUploadingFoto(prev => ({ ...prev, [analise.id]: true }));
     try {
-      for (const file of Array.from(files)) {
-        const compressed = await comprimirImagem(file);
-        const nova = await uploadFotoLaudo(id, compressed);
-        setFotos((prev) => [...prev, nova]);
-      }
+      const compressed = await comprimirImagem(file);
+      const url = await uploadFotoAnalise(id, analise.id, compressed);
+      await atualizarAnalise(analise.id, { foto_url: url });
+      setAnalises(prev => prev.map(a => a.id === analise.id ? { ...a, foto_url: url } : a));
     } catch (err: unknown) {
-      console.error('Erro upload foto:', err);
       const msg = err instanceof Error ? err.message : String(err);
       alert(`Erro ao enviar foto:\n${msg}`);
     } finally {
-      setUploadandoFoto(false);
+      setUploadingFoto(prev => ({ ...prev, [analise.id]: false }));
     }
   }
 
-  function handleLegendaChange(fotoId: string, legenda: string) {
-    setFotos((prev) => prev.map((f) => f.id === fotoId ? { ...f, legenda } : f));
-    if (legendaDebounceRefs.current[fotoId]) clearTimeout(legendaDebounceRefs.current[fotoId]);
-    legendaDebounceRefs.current[fotoId] = setTimeout(() => {
-      atualizarLegendaFotoLaudo(fotoId, legenda);
-    }, 600);
-  }
-
-  async function handleDeletarFoto(fotoId: string, caminho: string) {
-    if (!confirm('Remover esta foto?')) return;
-    await deletarFotoLaudo(fotoId, caminho);
-    setFotos((prev) => prev.filter((f) => f.id !== fotoId));
+  async function handleDeletarFotoAnalise(analise: Analise) {
+    if (!confirm('Remover foto desta análise?')) return;
+    await atualizarAnalise(analise.id, { foto_url: null });
+    setAnalises(prev => prev.map(a => a.id === analise.id ? { ...a, foto_url: null } : a));
   }
 
   // ── Finalizar ─────────────────────────────────────────────────
   async function handleFinalizar() {
     if (!laudo) return;
 
-    // DESABILITADO: Validação de fotos obrigatórias
-    // const faltamFotos = analises.filter(
-    //   (a) => a.tipo_foto === 'required' && !a.foto_url
-    // );
-    // if (faltamFotos.length > 0) {
-    //   alert(
-    //     `Faltam fotos obrigatórias em:\n${faltamFotos.map((a) => `• ${a.nome}`).join('\n')}`
-    //   );
-    //   return;
-    // }
+    const faltamFotos = analises.filter(a => a.tipo_foto === 'required' && !a.foto_url);
+    if (faltamFotos.length > 0) {
+      alert(`Faltam fotos obrigatórias em:\n${faltamFotos.map(a => `• ${a.nome}`).join('\n')}`);
+      return;
+    }
 
     const statusGeral = calcularStatusGeral(
       analises.map((a) => ({
@@ -709,79 +666,63 @@ export default function LaudoDetalhe() {
           )}
         </section>
 
-        {/* Fotos do laudo */}
-        <section className="glass-card rounded-[2rem] border-slate-800/90 p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">
-              Registro Fotográfico ({fotos.length})
+        {/* Registro Fotográfico — uma foto por análise */}
+        {analises.some(a => a.tipo_foto !== 'none') && (
+          <section className="glass-card rounded-[2rem] border-slate-800/90 p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400 mb-4">
+              Registro Fotográfico
             </h2>
-            <label className={`cursor-pointer text-sm font-semibold text-sky-300 transition hover:text-sky-200 ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
-              {uploadandoFoto ? 'Enviando...' : '+ Adicionar fotos'}
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
-              />
-            </label>
-          </div>
-
-          {fotos.length === 0 ? (
-            <label className={`flex flex-col items-center justify-center rounded-[1.75rem] border-2 border-dashed border-slate-700/60 p-10 text-center cursor-pointer hover:border-sky-500/40 transition ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
-              <span className="text-3xl mb-3">📷</span>
-              <span className="text-slate-400 text-sm font-medium">Clique para adicionar fotos</span>
-              <span className="text-slate-600 text-xs mt-1">JPG, PNG · comprimidas automaticamente</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
-              />
-            </label>
-          ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {fotos.map((foto) => (
-                <div key={foto.id} className="group relative rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-900/80">
-                  <img
-                    src={foto.url}
-                    alt={foto.legenda || ''}
-                    className="w-full h-40 object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
-                  />
-                  <div className="p-2">
-                    <input
-                      type="text"
-                      placeholder="Legenda (opcional)"
-                      value={foto.legenda || ''}
-                      onChange={(e) => handleLegendaChange(foto.id, e.target.value)}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-400/50 placeholder:text-slate-600"
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleDeletarFoto(foto.id, foto.caminho)}
-                    className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-rose-300 opacity-0 group-hover:opacity-100 transition hover:bg-black/90"
-                  >
-                    ✕
-                  </button>
+              {analises.filter(a => a.tipo_foto !== 'none').map(analise => (
+                <div key={analise.id} className="group relative flex flex-col">
+                  {analise.foto_url ? (
+                    <div className="rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-900/80 flex flex-col">
+                      <img
+                        src={analise.foto_url}
+                        alt={analise.nome}
+                        className="w-full aspect-square object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+                      />
+                      <div className="px-2 py-1.5 flex items-center justify-between gap-1 min-h-[2rem]">
+                        <span className="text-xs text-slate-400 truncate leading-tight">{analise.nome}</span>
+                        {!finalizado && (
+                          <button
+                            onClick={() => handleDeletarFotoAnalise(analise)}
+                            className="shrink-0 rounded-full bg-rose-500/10 px-1.5 py-0.5 text-xs text-rose-400 transition hover:bg-rose-500/20"
+                          >✕</button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed aspect-square cursor-pointer transition ${
+                      analise.tipo_foto === 'required'
+                        ? 'border-rose-500/50 hover:border-rose-400/70 bg-rose-500/5'
+                        : 'border-slate-700/60 hover:border-sky-500/40 bg-slate-900/40'
+                    } ${uploadingFoto[analise.id] ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <span className="text-2xl mb-1">
+                        {uploadingFoto[analise.id] ? '⏳' : '📷'}
+                      </span>
+                      <span className={`text-[11px] font-semibold ${analise.tipo_foto === 'required' ? 'text-rose-400' : 'text-slate-500'}`}>
+                        {analise.tipo_foto === 'required' ? 'Obrigatória' : 'Opcional'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5 text-center px-3 leading-tight line-clamp-2">
+                        {analise.nome}
+                      </span>
+                      {!finalizado && (
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => e.target.files?.[0] && handleFotoChange(analise, e.target.files[0])}
+                        />
+                      )}
+                    </label>
+                  )}
                 </div>
               ))}
-              {/* Botão de adicionar mais */}
-              <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-700/60 h-[196px] cursor-pointer hover:border-sky-500/40 transition ${uploadandoFoto ? 'opacity-50 pointer-events-none' : ''}`}>
-                <span className="text-2xl text-slate-600">+</span>
-                <span className="text-xs text-slate-600 mt-1">Mais fotos</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => e.target.files && handleUploadFotos(e.target.files)}
-                />
-              </label>
             </div>
-          )}
-        </section>
+          </section>
+        )}
 
         {/* Result summary */}
         {analises.length > 0 && (
