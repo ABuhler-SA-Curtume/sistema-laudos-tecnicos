@@ -178,10 +178,10 @@ export default function ImprimirLaudo() {
       let HEADERS: string[];
 
       if (pdfUsaCPs) {
-        // nome=38 spec=20 CP*N médiaCol=14 unit=18 normaCol=dynamic status=22
+        // nome=38 spec=20 CP*N médiaCol=14 unit=22 normaCol=dynamic status=22
         const perCpW = Math.min(13, Math.max(10, Math.floor(38 / pdfMaxCPs)));
-        const normaW = Math.max(22, 186 - 38 - 20 - perCpW * pdfMaxCPs - 14 - 18 - 22);
-        COLS = [38, 20, ...Array(pdfMaxCPs).fill(perCpW), 14, 18, normaW, 22];
+        const normaW = Math.max(20, 186 - 38 - 20 - perCpW * pdfMaxCPs - 14 - 22 - 22);
+        COLS = [38, 20, ...Array(pdfMaxCPs).fill(perCpW), 14, 22, normaW, 22];
         HEADERS = [
           t.analise, t.especificacao,
           ...Array.from({ length: pdfMaxCPs }, (_, ci) => `CP ${ci + 1}`),
@@ -189,8 +189,8 @@ export default function ImprimirLaudo() {
           t.unidade, t.norma, '',
         ];
       } else {
-        // nome=44 spec=26 res=16 unit=26 norma=38 status=36 → total=186
-        COLS = [44, 26, 16, 26, 38, 36];
+        // nome=44 spec=26 res=16 unit=30 norma=34 status=36 → total=186
+        COLS = [44, 26, 16, 30, 34, 36];
         HEADERS = [t.analise, t.especificacao, t.resultado, t.unidade, t.norma, t.status];
       }
 

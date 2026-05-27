@@ -286,7 +286,7 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
   <table class="at">
     <thead><tr>
       <th style="text-align:left">Análise</th>
-      <th>Especificação</th>${resultadoHeader}${cpHeaders}${mediaHeader}<th>Unidade</th><th>Norma</th><th></th>
+      <th>Especificação</th>${resultadoHeader}${cpHeaders}${mediaHeader}<th style="width:90px">${isEn ? 'Unit' : 'Unidade'}</th><th style="width:80px">${isEn ? 'Standard' : 'Norma'}</th><th style="width:28px"></th>
     </tr></thead>
     <tbody>${analysisRows}</tbody>
     <tfoot>
