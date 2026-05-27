@@ -184,7 +184,7 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
       // uma célula por CP + célula Média
       const cpCells = Array.from({ length: maxCPs }, (_, idx) => {
         const val = medicoes[idx] ?? '—';
-        return `<td class="bd tc mono" style="font-size:11px">${val}</td>`;
+        return `<td class="bd tc mono" style="font-size:11px;width:42px">${val}</td>`;
       }).join('');
 
       const media = medicoes.length > 1
@@ -216,10 +216,11 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
   }).join('');
 
   // cabeçalhos dinâmicos
+  const isEn = laudo.idioma_pdf === 'en-US';
   const cpHeaders = usaCPs
-    ? Array.from({ length: maxCPs }, (_, i) => `<th>CP ${i + 1}</th>`).join('')
+    ? Array.from({ length: maxCPs }, (_, i) => `<th style="width:42px">CP ${i + 1}</th>`).join('')
     : '';
-  const mediaHeader = usaCPs ? '<th>Média</th>' : '';
+  const mediaHeader = usaCPs ? `<th style="width:48px">${isEn ? 'Avg' : 'Média'}</th>` : '';
   const resultadoHeader = usaCPs ? '' : '<th>Resultado</th>';
   const totalCols = usaCPs ? 4 + maxCPs + 1 : 5; // análise+spec+CPs+média+unidade+norma+status
 

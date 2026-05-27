@@ -179,8 +179,8 @@ export default function ImprimirLaudo() {
 
       if (pdfUsaCPs) {
         // nome=38 spec=20 CP*N médiaCol=14 unit=18 normaCol=dynamic status=22
-        const perCpW = Math.max(10, Math.floor(46 / pdfMaxCPs));
-        const normaW = Math.max(20, 46 - perCpW * pdfMaxCPs + 28);
+        const perCpW = Math.min(13, Math.max(10, Math.floor(38 / pdfMaxCPs)));
+        const normaW = Math.max(22, 186 - 38 - 20 - perCpW * pdfMaxCPs - 14 - 18 - 22);
         COLS = [38, 20, ...Array(pdfMaxCPs).fill(perCpW), 14, 18, normaW, 22];
         HEADERS = [
           t.analise, t.especificacao,
@@ -548,7 +548,7 @@ export default function ImprimirLaudo() {
                 <th className="px-3 py-2 text-center font-semibold">{t.especificacao}</th>
                 {usaCPs
                   ? Array.from({ length: maxCPs }, (_, ci) => (
-                      <th key={ci} className="px-2 py-2 text-center font-semibold text-xs">CP {ci + 1}</th>
+                      <th key={ci} className="py-2 text-center font-semibold text-xs" style={{width: 38}}>CP {ci + 1}</th>
                     ))
                   : null}
                 {usaCPs
@@ -586,7 +586,7 @@ export default function ImprimirLaudo() {
                       ? (() => {
                           const meds = parseMeds(a);
                           return Array.from({ length: maxCPs }, (_, ci) => (
-                            <td key={ci} className="px-1 py-2 border border-gray-200 text-center font-mono text-xs">
+                            <td key={ci} className="py-2 border border-gray-200 text-center font-mono text-xs" style={{width: 38, maxWidth: 38}}>
                               {meds[ci] || '—'}
                             </td>
                           ));
