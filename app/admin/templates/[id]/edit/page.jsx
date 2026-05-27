@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import SpecInput from '@/components/SpecInput';
 import {
   obterTemplate,
   listarNormas,
@@ -58,6 +59,7 @@ export default function EditTemplate() {
     nome: '',
     norma_id: null,
     specification: '',
+    unidade: '',
     tipo_foto: 'optional',
   });
 
@@ -134,7 +136,8 @@ export default function EditTemplate() {
           analiseForm.nome,
           analiseForm.norma_id,
           analiseForm.specification,
-          analiseForm.tipo_foto
+          analiseForm.tipo_foto,
+          analiseForm.unidade
         );
       } else {
         // Criar
@@ -143,7 +146,8 @@ export default function EditTemplate() {
           analiseForm.nome,
           analiseForm.norma_id,
           analiseForm.specification,
-          analiseForm.tipo_foto
+          analiseForm.tipo_foto,
+          analiseForm.unidade
         );
       }
 
@@ -153,6 +157,7 @@ export default function EditTemplate() {
         nome: '',
         norma_id: null,
         specification: '',
+        unidade: '',
         tipo_foto: 'optional',
       });
 
@@ -179,8 +184,9 @@ export default function EditTemplate() {
           templateId,
           item.nome,
           item.norma?.id || null,
-          item.specification || '',
-          item.tipo_foto || 'optional'
+          item.specification || item.norma?.specification || '',
+          item.tipo_foto || 'optional',
+          item.unidade || item.norma?.unidade || ''
         );
       }
       setMostraCatalogo(false);
@@ -235,6 +241,7 @@ export default function EditTemplate() {
       nome: analise.nome,
       norma_id: analise.norma?.id || null,
       specification: analise.specification || '',
+      unidade: analise.unidade || '',
       tipo_foto: analise.tipo_foto || 'optional',
     });
     setEditandoAnaliseId(analise.id);
@@ -389,7 +396,7 @@ export default function EditTemplate() {
                 </button>
                 <button
                   onClick={() => {
-                    setAnaliseForm({ nome: '', norma_id: null, specification: '', tipo_foto: 'optional' });
+                    setAnaliseForm({ nome: '', norma_id: null, specification: '', unidade: '', tipo_foto: 'optional' });
                     setEditandoAnaliseId(null);
                     setMostraFormAnalise(true);
                   }}
@@ -441,6 +448,7 @@ export default function EditTemplate() {
                           norma_id: normaId,
                           nome: norma ? (norma.descricao || norma.codigo) : analiseForm.nome,
                           specification: norma?.specification ?? analiseForm.specification,
+                          unidade: norma?.unidade ?? analiseForm.unidade,
                         });
                       }}
                       className="input-dark w-full rounded-xl px-4 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
@@ -459,19 +467,27 @@ export default function EditTemplate() {
                     <label className="block text-sm font-semibold text-slate-300 mb-2">
                       Specification
                     </label>
-                    <input
-                      type="text"
-                      placeholder="ex: >3.5"
+                    <SpecInput
                       value={analiseForm.specification}
-                      onChange={(e) =>
-                        setAnaliseForm({
-                          ...analiseForm,
-                          specification: e.target.value,
-                        })
-                      }
+                      onChange={(v) => setAnaliseForm({ ...analiseForm, specification: v })}
+                      placeholder="ex: ≥3.5"
                       className="input-dark w-full rounded-xl px-4 py-2 text-sm font-mono placeholder:font-sans placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                     />
                   </div>
+                </div>
+
+                {/* Unidade */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-300 mb-2">
+                    Unidade de medida
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="ex: N, N/mm², ciclos"
+                    value={analiseForm.unidade}
+                    onChange={(e) => setAnaliseForm({ ...analiseForm, unidade: e.target.value })}
+                    className="input-dark w-full rounded-xl px-4 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
                 </div>
 
                 {/* Tipo Foto */}
@@ -518,6 +534,7 @@ export default function EditTemplate() {
                         nome: '',
                         norma_id: null,
                         specification: '',
+                        unidade: '',
                         tipo_foto: 'optional',
                       });
                     }}

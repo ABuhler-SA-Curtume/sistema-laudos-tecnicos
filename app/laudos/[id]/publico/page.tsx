@@ -256,7 +256,7 @@ export default function PublicoLaudo() {
                 laudo.codigo_item ? ['Código do item', laudo.codigo_item] : null,
                 laudo.ordem_compra ? ['Ordem de compra', laudo.ordem_compra] : null,
                 laudo.metragem ? ['Metragem', laudo.metragem] : null,
-                laudo.lotes ? ['Lotes', laudo.lotes] : null,
+                laudo.lotes ? ['Marca', laudo.lotes] : null,
               ].filter(Boolean) as [string, string][])
                 .reduce<[string, string][][]>((rows, item, i) => {
                   if (i % 2 === 0) rows.push([item]);
@@ -344,11 +344,11 @@ export default function PublicoLaudo() {
             <p style={{ fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6b7280', marginBottom: 8 }}>
               Registro Fotográfico
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
               {analises.filter((a) => a.foto_url).map((a) => (
                 <div key={a.id} style={{ textAlign: 'center' }}>
-                  <img src={a.foto_url!} alt={a.nome} style={{ width: '100%', height: 144, objectFit: 'cover', borderRadius: 4, border: '1px solid #e5e7eb' }} />
-                  <p style={{ fontSize: 11, color: '#4b5563', marginTop: 4, fontWeight: 500 }}>{a.nome}</p>
+                  <img src={a.foto_url!} alt={a.nome} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 4, border: '1px solid #e5e7eb', display: 'block' }} />
+                  <p style={{ fontSize: 10, color: '#4b5563', marginTop: 4, fontWeight: 500 }}>{a.nome}</p>
                 </div>
               ))}
             </div>

@@ -4,9 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
-import { criarLaudo, adicionarAnalise, listarTemplates, obterTemplate } from '@/lib/laudosServiceSupabase';
-
-const BLANK_ANALISE = { nome: '', norma: '', specification: '', tipo_foto: 'optional' };
+import { criarLaudo, adicionarAnalise, listarTemplates, obterTemplate, listarCatalogoAnalises } from '@/lib/laudosServiceSupabase';
 
 const TIPO_FOTO_LABEL = {
   required: 'Foto obrigatória',
@@ -30,6 +28,7 @@ export default function NovoLaudo() {
   const [templates, setTemplates] = useState([]);
 
   // Passo 1 — dados básicos
+  const [idioma, setIdioma] = useState('');
   const [info, setInfo] = useState({
     cliente: '', artigo: '', cor: '', op: '', responsavel: 'Cristiano Luis Backes',
     codigo_item: '', ordem_compra: '', metragem: '', lotes: '', observacoes: '',
@@ -38,8 +37,13 @@ export default function NovoLaudo() {
   // Passo 2 — base de análises
   const [templateId, setTemplateId] = useState('');
   const [analises, setAnalises] = useState([]);
-  const [adicionando, setAdicionando] = useState(false);
-  const [novaAnalise, setNovaAnalise] = useState(BLANK_ANALISE);
+
+  // Catálogo modal
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogItems, setCatalogItems] = useState([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogSelected, setCatalogSelected] = useState(new Set());
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   // ── Carregar bases de análises dinâmicas ──
   async function carregarTemplates() {
@@ -89,6 +93,10 @@ export default function NovoLaudo() {
       setErro('Cliente e Artigo são obrigatórios.');
       return;
     }
+    if (!idioma) {
+      setErro('Selecione o idioma do laudo antes de continuar.');
+      return;
+    }
     setErro('');
     setPasso(2);
   }
@@ -126,12 +134,51 @@ export default function NovoLaudo() {
     setAnalises((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function adicionarLinha() {
-    if (!novaAnalise.nome.trim()) return;
-    setAnalises((prev) => [...prev, { ...novaAnalise }]);
-    setNovaAnalise(BLANK_ANALISE);
-    setAdicionando(false);
+  // ── Catálogo modal ───────────────────────────────────────────
+  async function abrirCatalogo() {
+    setShowCatalog(true);
+    setCatalogSearch('');
+    setCatalogSelected(new Set());
+    setCatalogLoading(true);
+    try {
+      const dados = await listarCatalogoAnalises('');
+      const normalizados = dados.map((c) => ({
+        ...c,
+        norma: Array.isArray(c.norma) ? (c.norma[0] ?? null) : (c.norma ?? null),
+      }));
+      setCatalogItems(normalizados);
+    } finally {
+      setCatalogLoading(false);
+    }
   }
+
+  function toggleCatalogItem(id) {
+    setCatalogSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleAddFromCatalog() {
+    const toAdd = catalogItems
+      .filter((c) => catalogSelected.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        norma: c.norma?.codigo || '',
+        specification: c.specification || c.norma?.specification || '',
+        unidade: c.unidade || c.norma?.unidade || '',
+        tipo_foto: c.tipo_foto || 'optional',
+      }));
+    setAnalises((prev) => [...prev, ...toAdd]);
+    setShowCatalog(false);
+  }
+
+  const catalogFiltered = catalogItems.filter((c) =>
+    c.nome.toLowerCase().includes(catalogSearch.toLowerCase())
+  );
 
   // ── Criar laudo ──────────────────────────────────────────────
   async function handleCriar() {
@@ -142,10 +189,10 @@ export default function NovoLaudo() {
     setErro('');
     setSalvando(true);
     try {
-      const laudo = await criarLaudo(info);
+      const laudo = await criarLaudo({ ...info, idioma_pdf: idioma });
 
       await Promise.all(
-        analises.map((a) =>
+        analises.map((a, idx) =>
           adicionarAnalise(laudo.id, {
             nome: a.nome,
             norma: a.norma,
@@ -155,6 +202,7 @@ export default function NovoLaudo() {
             resultado: null,
             status_analise: null,
             foto_url: null,
+            ordem: idx,
           })
         )
       );
@@ -235,7 +283,7 @@ export default function NovoLaudo() {
                 { field: 'codigo_item',  label: 'Código do item',   req: false, icon: '🏷️' },
                 { field: 'ordem_compra', label: 'Ordem de compra',  req: false, icon: '📋' },
                 { field: 'metragem',     label: 'Metragem',         req: false, icon: '📏' },
-                { field: 'lotes',        label: 'Lotes',            req: false, icon: '🗂️' },
+                { field: 'lotes',        label: 'Marca',            req: false, icon: '🗂️' },
               ].map(({ field, label, req, icon }) => (
                 <label key={field} className="block">
                   <span className="text-sm font-semibold text-slate-300 mb-2 flex items-center gap-2">
@@ -266,7 +314,38 @@ export default function NovoLaudo() {
               />
             </label>
 
-            <div className="flex gap-4 pt-4 border-t border-slate-800/50">
+            {/* Idioma — obrigatório */}
+            <div className="pt-4 border-t border-slate-800/50">
+              <span className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                <span>🌐</span>
+                Idioma do laudo <span className="text-rose-400">*</span>
+              </span>
+              <div className="flex gap-3 mt-2">
+                {[
+                  { codigo: 'pt-BR', flag: '🇧🇷', label: 'Português' },
+                  { codigo: 'en-US', flag: '🇬🇧', label: 'English' },
+                ].map((op) => (
+                  <button
+                    key={op.codigo}
+                    type="button"
+                    onClick={() => setIdioma(op.codigo)}
+                    className={`flex items-center gap-2 px-5 py-3 rounded-2xl border-2 text-sm font-semibold transition-all ${
+                      idioma === op.codigo
+                        ? 'border-sky-500 bg-sky-500/15 text-sky-200 shadow-lg shadow-sky-500/10'
+                        : 'border-slate-700/60 bg-slate-900/60 text-slate-400 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className="text-lg">{op.flag}</span>
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+              {!idioma && (
+                <p className="text-xs text-slate-500 mt-2">Selecione o idioma para continuar</p>
+              )}
+            </div>
+
+            <div className="flex gap-4">
               <button
                 onClick={avancar}
                 className="button-primary px-8 py-3 text-sm font-semibold shadow-lg shadow-sky-500/20 flex-1 md:flex-none"
@@ -363,28 +442,19 @@ export default function NovoLaudo() {
                     <h2 className="text-lg font-bold text-slate-100">
                       Análises ({analises.length})
                     </h2>
-                    <p className="text-slate-400 text-sm">Configure as análises do laudo</p>
+                    <p className="text-slate-400 text-sm">Análises da base selecionada</p>
                   </div>
-                  {!adicionando && (
-                    <button
-                      onClick={() => setAdicionando(true)}
-                      className="text-sm font-semibold text-sky-300 hover:text-sky-200 transition flex items-center gap-2"
-                    >
-                      <span>+</span>
-                      Adicionar análise
-                    </button>
-                  )}
+                  <button
+                    onClick={abrirCatalogo}
+                    className="button-primary px-4 py-2 text-xs font-semibold"
+                  >
+                    + Adicionar análise
+                  </button>
                 </div>
 
-                {analises.length === 0 && !adicionando && (
+                {analises.length === 0 && (
                   <div className="text-center py-12 rounded-[1.75rem] border border-slate-800/80 bg-slate-900/80">
-                    <p className="text-slate-400 text-sm mb-4">Nenhuma análise configurada</p>
-                    <button
-                      onClick={() => setAdicionando(true)}
-                      className="button-primary px-6 py-2 text-sm"
-                    >
-                      Adicionar primeira análise
-                    </button>
+                    <p className="text-slate-400 text-sm">Nenhuma análise na base selecionada</p>
                   </div>
                 )}
 
@@ -432,60 +502,6 @@ export default function NovoLaudo() {
                   ))}
                 </div>
 
-                {/* Add new analysis form */}
-                {adicionando && (
-                  <div className="mt-6 p-6 rounded-[1.75rem] border border-sky-500/20 bg-sky-500/10">
-                    <p className="text-sm font-semibold text-sky-300 mb-4 flex items-center gap-2">
-                      <span>🧪</span>
-                      Nova análise
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input
-                        autoFocus
-                        value={novaAnalise.nome}
-                        onChange={(e) => setNovaAnalise({ ...novaAnalise, nome: e.target.value })}
-                        placeholder="Nome da análise *"
-                        className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                      />
-                      <input
-                        value={novaAnalise.norma}
-                        onChange={(e) => setNovaAnalise({ ...novaAnalise, norma: e.target.value })}
-                        placeholder="Norma (ex: ISO 5470-2)"
-                        className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                      />
-                      <input
-                        value={novaAnalise.specification}
-                        onChange={(e) => setNovaAnalise({ ...novaAnalise, specification: e.target.value })}
-                        placeholder="Especificação (ex: >3.5)"
-                        className="input-dark rounded-2xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                      />
-                      <select
-                        value={novaAnalise.tipo_foto}
-                        onChange={(e) => setNovaAnalise({ ...novaAnalise, tipo_foto: e.target.value })}
-                        className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                      >
-                        <option value="required">Foto obrigatória</option>
-                        <option value="optional">Foto opcional</option>
-                        <option value="none">Sem foto</option>
-                      </select>
-                    </div>
-                    <div className="flex gap-3 mt-6">
-                      <button
-                        onClick={adicionarLinha}
-                        disabled={!novaAnalise.nome.trim()}
-                        className="button-primary px-6 py-3 text-sm font-semibold shadow-lg shadow-sky-500/20"
-                      >
-                        Adicionar análise
-                      </button>
-                      <button
-                        onClick={() => { setAdicionando(false); setNovaAnalise(BLANK_ANALISE); }}
-                        className="button-secondary px-6 py-3 text-sm font-semibold"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                )}
               </section>
             )}
 
@@ -507,6 +523,93 @@ export default function NovoLaudo() {
           </div>
         )}
       </main>
+
+      {/* ── Modal catálogo ── */}
+      {showCatalog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-card rounded-[2rem] border-slate-700/80 w-full max-w-lg flex flex-col max-h-[80vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-800/60">
+              <h3 className="font-bold text-slate-100">Adicionar análises do catálogo</h3>
+              <button
+                onClick={() => setShowCatalog(false)}
+                className="text-slate-400 hover:text-slate-200 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-6 py-4 border-b border-slate-800/40">
+              <input
+                autoFocus
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder="Buscar análise..."
+                className="input-dark rounded-xl px-4 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+              />
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+              {catalogLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full mx-auto mb-2" />
+                  <p className="text-slate-400 text-xs">Carregando catálogo...</p>
+                </div>
+              ) : catalogFiltered.length === 0 ? (
+                <p className="text-slate-400 text-sm text-center py-8">Nenhuma análise encontrada</p>
+              ) : (
+                catalogFiltered.map((c) => (
+                  <label
+                    key={c.id}
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      catalogSelected.has(c.id)
+                        ? 'border-sky-500/60 bg-sky-500/10'
+                        : 'border-slate-800/60 bg-slate-900/60 hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={catalogSelected.has(c.id)}
+                      onChange={() => toggleCatalogItem(c.id)}
+                      className="mt-0.5 accent-sky-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-200">{c.nome}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {c.norma?.codigo || '—'} · {c.specification || '—'} · {c.unidade || '—'}
+                      </p>
+                    </div>
+                  </label>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800/60">
+              <span className="text-xs text-slate-400">
+                {catalogSelected.size} selecionada(s)
+              </span>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCatalog(false)}
+                  className="button-secondary px-4 py-2 text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddFromCatalog}
+                  disabled={catalogSelected.size === 0}
+                  className="button-primary px-5 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Adicionar ({catalogSelected.size})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

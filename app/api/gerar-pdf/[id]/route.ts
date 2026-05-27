@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
 
   const [{ data: laudo, error }, { data: analises }] = await Promise.all([
     supabase.from('laudos').select('*').eq('id', id).single(),
-    supabase.from('analises').select('*').eq('laudo_id', id).order('criado_em', { ascending: true }),
+    supabase.from('analises').select('*').eq('laudo_id', id).order('ordem', { ascending: true }),
   ]);
 
   if (error || !laudo) {
@@ -142,7 +142,7 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
     laudo.codigo_item ? ['Código do item', laudo.codigo_item] : null,
     laudo.ordem_compra ? ['Ordem de compra', laudo.ordem_compra] : null,
     laudo.metragem ? ['Metragem', laudo.metragem] : null,
-    laudo.lotes ? ['Lotes', laudo.lotes] : null,
+    laudo.lotes ? ['Marca', laudo.lotes] : null,
   ].filter(Boolean) as [string, string][];
 
   const pairs = infoFields.reduce<[string, string][][]>((rows, item, i) => {
@@ -157,29 +157,93 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
       ${pair[1] ? `<td class="lbl">${pair[1][0]}</td><td>${pair[1][1] || '—'}</td>` : '<td colspan="2"></td>'}
     </tr>`).join('');
 
+  // descobre o máximo de medições entre todas as análises
+  const parseMedicoes = (a: Record<string, unknown>): string[] => {
+    const raw = a.medicoes;
+    const arr = Array.isArray(raw) ? raw : [];
+    return (arr as string[]).filter((m: string) => String(m).trim() !== '');
+  };
+
+  const maxCPs = analises.reduce((max, a) => Math.max(max, parseMedicoes(a).length), 0);
+  const usaCPs = maxCPs > 1;
+
   const analysisRows = analises.map((a, i) => {
     const s = getStatus(a);
     const bg = s === 'approved' ? '#f0fdf4' : s === 'rejected' ? '#fef2f2' : i % 2 === 0 ? '#fff' : '#f9fafb';
-    const badge = s
-      ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:${statusBg[s]};color:${statusColor[s]}">${LABEL[s]}</span>`
+
+    // ✓ / ✗ para linhas individuais
+    const icon = s === 'approved'
+      ? `<span style="font-size:13px;font-weight:700;color:#15803d">✓</span>`
+      : s === 'rejected'
+      ? `<span style="font-size:13px;font-weight:700;color:#dc2626">✗</span>`
       : '<span style="color:#9ca3af">—</span>';
+
+    const medicoes = parseMedicoes(a);
+
+    if (usaCPs) {
+      // uma célula por CP + célula Média
+      const cpCells = Array.from({ length: maxCPs }, (_, idx) => {
+        const val = medicoes[idx] ?? '—';
+        return `<td class="bd tc mono" style="font-size:11px">${val}</td>`;
+      }).join('');
+
+      const media = medicoes.length > 1
+        ? `<span style="font-weight:700;color:#1d4ed8">${a.resultado || '—'}</span>`
+        : `<span style="color:#6b7280">${a.resultado || '—'}</span>`;
+
+      return `
+        <tr style="background:${bg}">
+          <td class="bd">${a.nome}</td>
+          <td class="bd tc mono">${a.specification || '—'}</td>
+          ${cpCells}
+          <td class="bd tc mono">${media}</td>
+          <td class="bd tc mono" style="color:#6b7280;font-size:10px">${a.unidade || '—'}</td>
+          <td class="bd tc" style="color:#6b7280;font-size:10px">${a.norma || '—'}</td>
+          <td class="bd tc">${icon}</td>
+        </tr>`;
+    }
+
+    // layout simples (sem múltiplos CPs)
     return `
       <tr style="background:${bg}">
         <td class="bd">${a.nome}</td>
         <td class="bd tc mono">${a.specification || '—'}</td>
         <td class="bd tc mono" style="font-weight:700">${a.resultado || '—'}</td>
-        <td class="bd tc mono" style="color:#6b7280">${a.unidade || '—'}</td>
-        <td class="bd tc" style="color:#6b7280">${a.norma || '—'}</td>
-        <td class="bd tc">${badge}</td>
+        <td class="bd tc mono" style="color:#6b7280;font-size:10px">${a.unidade || '—'}</td>
+        <td class="bd tc" style="color:#6b7280;font-size:10px">${a.norma || '—'}</td>
+        <td class="bd tc">${icon}</td>
       </tr>`;
   }).join('');
 
-  const footerBadge = `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:${statusBg[statusGeral]};color:${statusColor[statusGeral]}">${LABEL[statusGeral]}</span>`;
+  // cabeçalhos dinâmicos
+  const cpHeaders = usaCPs
+    ? Array.from({ length: maxCPs }, (_, i) => `<th>CP ${i + 1}</th>`).join('')
+    : '';
+  const mediaHeader = usaCPs ? '<th>Média</th>' : '';
+  const resultadoHeader = usaCPs ? '' : '<th>Resultado</th>';
+  const totalCols = usaCPs ? 4 + maxCPs + 1 : 5; // análise+spec+CPs+média+unidade+norma+status
+
+  const footerBadge = `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:${statusBg[statusGeral]};color:${statusColor[statusGeral]}">${LABEL[statusGeral]}</span>`;
 
   const obsBlock = laudo.observacoes ? `
     <div style="margin-bottom:20px">
       <div class="st">Observações</div>
       <p style="border:1px solid #e5e7eb;border-radius:4px;padding:10px;color:#374151">${laudo.observacoes}</p>
+    </div>` : '';
+
+  const comFoto = analises.filter(a => a.foto_url);
+  const photosBlock = comFoto.length > 0 ? `
+    <div style="margin-bottom:20px">
+      <div class="st">Registro Fotográfico</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        ${comFoto.map(a => `
+        <div style="text-align:center">
+          <div style="width:100%;aspect-ratio:1/1;overflow:hidden;border-radius:4px;border:1px solid #e5e7eb">
+            <img src="${a.foto_url}" alt="${a.nome}" style="width:100%;height:100%;object-fit:cover;display:block"/>
+          </div>
+          <p style="font-size:10px;color:#4b5563;margin-top:4px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.nome}</p>
+        </div>`).join('')}
+      </div>
     </div>` : '';
 
   return `<!DOCTYPE html>
@@ -221,12 +285,12 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
   <table class="at">
     <thead><tr>
       <th style="text-align:left">Análise</th>
-      <th>Especificação</th><th>Resultado</th><th>Unidade</th><th>Norma</th><th>Status</th>
+      <th>Especificação</th>${resultadoHeader}${cpHeaders}${mediaHeader}<th>Unidade</th><th>Norma</th><th></th>
     </tr></thead>
     <tbody>${analysisRows}</tbody>
     <tfoot>
       <tr style="background:#f3f4f6;font-weight:600">
-        <td class="bd" colspan="5">Resultado Final — ${aprovados} aprovada(s), ${reprovados} reprovada(s)</td>
+        <td class="bd" colspan="${totalCols}">Resultado Final — ${aprovados} aprovada(s), ${reprovados} reprovada(s)</td>
         <td class="bd tc">${footerBadge}</td>
       </tr>
     </tfoot>
@@ -234,6 +298,8 @@ function buildHTML(laudo: Record<string, string>, analises: Record<string, strin
 </div>
 
 ${obsBlock}
+
+${photosBlock}
 
 <div style="margin-top:28px;padding-top:14px;border-top:1px solid #d1d5db;display:flex;justify-content:space-between;align-items:flex-end">
   <div>

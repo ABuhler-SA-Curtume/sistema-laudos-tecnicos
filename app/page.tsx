@@ -336,6 +336,7 @@ export default function Home() {
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide">Número</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide">Cliente</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide hidden md:table-cell">Artigo</th>
+                  <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide hidden lg:table-cell">Cor</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide hidden lg:table-cell">Data</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide">Status</th>
                   <th className="px-3 sm:px-4 py-3 sm:py-4 text-left font-semibold tracking-wide">Ações</th>
@@ -349,6 +350,7 @@ export default function Home() {
                       <td className="px-3 sm:px-4 py-3 sm:py-4 font-mono font-semibold text-sky-300 whitespace-nowrap">{laudo.numero}</td>
                       <td className="px-3 sm:px-4 py-3 sm:py-4 text-slate-200 max-w-[120px] sm:max-w-none truncate">{laudo.cliente}</td>
                       <td className="px-3 sm:px-4 py-3 sm:py-4 hidden md:table-cell text-slate-400">{laudo.artigo}</td>
+                      <td className="px-3 sm:px-4 py-3 sm:py-4 hidden lg:table-cell text-slate-400">{laudo.cor || '—'}</td>
                       <td className="px-3 sm:px-4 py-3 sm:py-4 hidden lg:table-cell text-slate-400 whitespace-nowrap">
                         {new Date(laudo.criado_em).toLocaleDateString('pt-BR')}
                       </td>

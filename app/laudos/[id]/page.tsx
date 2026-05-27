@@ -14,10 +14,10 @@ import {
   finalizarLaudo,
   IDIOMAS_DISPONIVEIS,
   uploadFotoAnalise,
+  listarCatalogoAnalises,
 } from '@/lib/laudosServiceSupabase';
-import { avaliarStatus, calcularStatusGeral } from '@/lib/avaliarAnalise';
+import { avaliarStatus, calcularStatusGeral, calcularMedia } from '@/lib/avaliarAnalise';
 import LogoAbuhler from '@/components/LogoAbuhler';
-import SpecInput from '@/components/SpecInput';
 
 type Analise = {
   id: string;
@@ -27,8 +27,20 @@ type Analise = {
   norma: string;
   tipo_foto: 'required' | 'optional' | 'none';
   resultado: string;
+  medicoes: string[];
   status_analise: string | null;
   foto_url: string | null;
+};
+
+type NormaRef = { codigo: string; specification?: string; unidade?: string };
+
+type CatalogoAnalise = {
+  id: string;
+  nome: string;
+  specification: string;
+  unidade: string;
+  tipo_foto: string;
+  norma?: NormaRef | null;
 };
 
 type Laudo = {
@@ -69,13 +81,7 @@ const STATUS_LABEL = {
   draft: 'RASCUNHO',
 };
 
-const BLANK_ANALISE = {
-  nome: '',
-  specification: '',
-  unidade: '',
-  norma: '',
-  tipo_foto: 'optional' as 'required' | 'optional' | 'none',
-};
+// Catalog modal state kept separately — no blank analise needed
 
 export default function LaudoDetalhe() {
   const { id } = useParams<{ id: string }>();
@@ -93,9 +99,12 @@ export default function LaudoDetalhe() {
   const [editandoInfo, setEditandoInfo] = useState(false);
   const [infoForm, setInfoForm] = useState<Partial<Laudo>>({});
 
-  // New analysis form
-  const [showAddAnalise, setShowAddAnalise] = useState(false);
-  const [novaAnalise, setNovaAnalise] = useState(BLANK_ANALISE);
+  // Catalog modal
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogItems, setCatalogItems] = useState<CatalogoAnalise[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogSelected, setCatalogSelected] = useState<Set<string>>(new Set());
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [adicionando, setAdicionando] = useState(false);
 
   const saveDebounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -123,7 +132,7 @@ export default function LaudoDetalhe() {
       const [l, a] = await Promise.all([getLaudo(id), getAnalises(id)]);
       if (!mounted) return;
       setLaudo(l);
-      setAnalises(a);
+      setAnalises(a.map((an: Analise) => ({ ...an, medicoes: an.medicoes.length > 0 ? an.medicoes : [''] })));
       setInfoForm(l);
       if (l.idioma_pdf) setIdiomaSelecionado(l.idioma_pdf);
     } finally {
@@ -157,36 +166,94 @@ export default function LaudoDetalhe() {
     }
   }
 
-  // ── Análises ─────────────────────────────────────────────────
-  async function handleAddAnalise() {
-    if (!novaAnalise.nome.trim()) return;
+  // ── Catálogo de análises ──────────────────────────────────────
+  async function abrirCatalogo() {
+    setShowCatalog(true);
+    setCatalogSearch('');
+    setCatalogSelected(new Set());
+    setCatalogLoading(true);
+    try {
+      const dados = await listarCatalogoAnalises('');
+      // normaliza norma que pode vir como array do Supabase join
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const normalizados: CatalogoAnalise[] = (dados as any[]).map((c) => ({
+        ...c,
+        norma: Array.isArray(c.norma) ? (c.norma[0] ?? null) : (c.norma ?? null),
+      }));
+      setCatalogItems(normalizados);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
+  function toggleCatalogItem(itemId: string) {
+    setCatalogSelected((prev) => {
+      const next = new Set(prev);
+      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      return next;
+    });
+  }
+
+  async function handleAddFromCatalog() {
+    if (catalogSelected.size === 0) return;
     setAdicionando(true);
     try {
-      const criada = await adicionarAnalise(id, {
-        ...novaAnalise,
-        resultado: null,
-        status_analise: null,
-        foto_url: null,
-      });
-      setAnalises((prev) => [...prev, criada]);
-      setNovaAnalise(BLANK_ANALISE);
-      setShowAddAnalise(false);
+      const selecionadas = catalogItems.filter((c) => catalogSelected.has(c.id));
+      const criadas = await Promise.all(
+        selecionadas.map((c, i) => {
+          return adicionarAnalise(id, {
+            nome: c.nome,
+            norma: c.norma?.codigo || '',
+            specification: c.specification || c.norma?.specification || '',
+            unidade: c.unidade || c.norma?.unidade || '',
+            tipo_foto: c.tipo_foto || 'optional',
+            resultado: null,
+            medicoes: [''],
+            status_analise: null,
+            foto_url: null,
+            ordem: analises.length + i,
+          });
+        })
+      );
+      setAnalises((prev) => [...prev, ...criadas.map((c) => ({ ...c, medicoes: Array.isArray(c.medicoes) && c.medicoes.length > 0 ? c.medicoes : [''] }))]);
+      setShowCatalog(false);
     } finally {
       setAdicionando(false);
     }
   }
 
-  function handleResultadoChange(analise: Analise, valor: string) {
-    const status = avaliarStatus(valor, analise.specification);
-    const updated = { ...analise, resultado: valor, status_analise: status };
+  // ── Medições por análise ──────────────────────────────────────
+  function handleMedicaoChange(analise: Analise, idx: number, valor: string) {
+    const novasMedicoes = analise.medicoes.map((m, i) => (i === idx ? valor : m));
+    const media = calcularMedia(novasMedicoes) ?? '';
+    const status = avaliarStatus(media, analise.specification);
+    const updated = { ...analise, medicoes: novasMedicoes, resultado: media, status_analise: status };
 
-    // Atualiza UI imediatamente (otimista)
     setAnalises((prev) => prev.map((a) => (a.id === analise.id ? updated : a)));
 
-    // Salva no Supabase só após 600ms sem digitar
     if (saveDebounceRefs.current[analise.id]) clearTimeout(saveDebounceRefs.current[analise.id]);
     saveDebounceRefs.current[analise.id] = setTimeout(() => {
-      atualizarAnalise(analise.id, { resultado: valor, status_analise: status });
+      atualizarAnalise(analise.id, { medicoes: novasMedicoes, resultado: media, status_analise: status });
+    }, 600);
+  }
+
+  function handleAdicionarMedicao(analise: Analise) {
+    const novasMedicoes = [...analise.medicoes, ''];
+    const updated = { ...analise, medicoes: novasMedicoes };
+    setAnalises((prev) => prev.map((a) => (a.id === analise.id ? updated : a)));
+  }
+
+  function handleRemoverMedicao(analise: Analise, idx: number) {
+    const novasMedicoes = analise.medicoes.filter((_, i) => i !== idx);
+    const media = calcularMedia(novasMedicoes) ?? '';
+    const status = avaliarStatus(media, analise.specification);
+    const updated = { ...analise, medicoes: novasMedicoes, resultado: media, status_analise: status };
+
+    setAnalises((prev) => prev.map((a) => (a.id === analise.id ? updated : a)));
+
+    if (saveDebounceRefs.current[analise.id]) clearTimeout(saveDebounceRefs.current[analise.id]);
+    saveDebounceRefs.current[analise.id] = setTimeout(() => {
+      atualizarAnalise(analise.id, { medicoes: novasMedicoes, resultado: media, status_analise: status });
     }, 600);
   }
 
@@ -439,7 +506,7 @@ export default function LaudoDetalhe() {
                     ['codigo_item', 'Código do item'],
                     ['ordem_compra', 'Ordem de compra'],
                     ['metragem', 'Metragem'],
-                    ['lotes', 'Lotes'],
+                    ['lotes', 'Marca'],
                   ] as [keyof Laudo, string][]
                 ).map(([field, label]) => (
                   <label key={field} className="block">
@@ -491,7 +558,7 @@ export default function LaudoDetalhe() {
                 ...(laudo.codigo_item ? [['Código do item', laudo.codigo_item]] : []),
                 ...(laudo.ordem_compra ? [['Ordem de compra', laudo.ordem_compra]] : []),
                 ...(laudo.metragem ? [['Metragem', laudo.metragem]] : []),
-                ...(laudo.lotes ? [['Lotes', laudo.lotes]] : []),
+                ...(laudo.lotes ? [['Marca', laudo.lotes]] : []),
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</dt>
@@ -516,65 +583,92 @@ export default function LaudoDetalhe() {
             </h2>
             {!finalizado && (
               <button
-                onClick={() => setShowAddAnalise(!showAddAnalise)}
+                onClick={abrirCatalogo}
                 className="text-sm font-semibold text-sky-300 transition hover:text-sky-200"
               >
-                {showAddAnalise ? 'Cancelar' : '+ Adicionar análise'}
+                + Adicionar análise
               </button>
             )}
           </div>
 
-          {showAddAnalise && (
-            <div className="mb-6 rounded-[1.75rem] border border-slate-800/80 bg-slate-900/80 p-5">
-              <p className="mb-4 text-sm font-semibold text-slate-100">Nova análise</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <input
-                  placeholder="Nome da análise *"
-                  value={novaAnalise.nome}
-                  onChange={(e) => setNovaAnalise({ ...novaAnalise, nome: e.target.value })}
-                  className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                />
-                <SpecInput
-                  value={novaAnalise.specification}
-                  onChange={(v: string) => setNovaAnalise({ ...novaAnalise, specification: v })}
-                  className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:font-sans placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                />
-                <input
-                  placeholder="Unidade (ex: N, N/mm², ciclos)"
-                  value={novaAnalise.unidade}
-                  onChange={(e) => setNovaAnalise({ ...novaAnalise, unidade: e.target.value })}
-                  className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                />
-                <textarea
-                  placeholder="Norma — código e descrição"
-                  value={novaAnalise.norma}
-                  onChange={(e) => setNovaAnalise({ ...novaAnalise, norma: e.target.value })}
-                  rows={3}
-                  className="col-span-full input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                />
-                <select
-                  value={novaAnalise.tipo_foto}
-                  onChange={(e) =>
-                    setNovaAnalise({
-                      ...novaAnalise,
-                      tipo_foto: e.target.value as 'required' | 'optional' | 'none',
-                    })
-                  }
-                  className="input-dark rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                >
-                  <option value="required">Foto obrigatória</option>
-                  <option value="optional">Foto opcional</option>
-                  <option value="none">Sem foto</option>
-                </select>
-              </div>
-              <div className="mt-5">
-                <button
-                  onClick={handleAddAnalise}
-                  disabled={adicionando || !novaAnalise.nome.trim()}
-                  className="rounded-full button-primary px-5 py-3 text-sm font-semibold shadow-lg shadow-sky-500/20 disabled:opacity-60"
-                >
-                  {adicionando ? 'Adicionando...' : 'Adicionar análise'}
-                </button>
+          {/* Modal catálogo */}
+          {showCatalog && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+              <div className="w-full max-w-lg rounded-[2rem] border border-slate-800/90 bg-slate-900 shadow-2xl flex flex-col max-h-[80vh]">
+                <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-4">
+                  <p className="text-sm font-semibold text-slate-100">Adicionar análises do catálogo</p>
+                  <button onClick={() => setShowCatalog(false)} className="text-slate-400 hover:text-slate-200 text-lg leading-none">✕</button>
+                </div>
+                <div className="px-6 pb-3">
+                  <input
+                    autoFocus
+                    placeholder="Pesquisar análise..."
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="input-dark w-full rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 pb-2 space-y-1">
+                  {catalogLoading ? (
+                    <p className="py-6 text-center text-sm text-slate-400">Carregando...</p>
+                  ) : catalogItems.filter((c) =>
+                      c.nome.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                      (c.norma?.codigo || '').toLowerCase().includes(catalogSearch.toLowerCase())
+                    ).length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-400">Nenhuma análise encontrada.</p>
+                  ) : (
+                    catalogItems
+                      .filter((c) =>
+                        c.nome.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                        (c.norma?.codigo || '').toLowerCase().includes(catalogSearch.toLowerCase())
+                      )
+                      .map((c) => (
+                        <label
+                          key={c.id}
+                          className={`flex items-start gap-3 rounded-2xl border p-3 cursor-pointer transition ${
+                            catalogSelected.has(c.id)
+                              ? 'border-sky-500/40 bg-sky-500/10'
+                              : 'border-slate-800/60 bg-slate-950/40 hover:border-slate-700/80'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={catalogSelected.has(c.id)}
+                            onChange={() => toggleCatalogItem(c.id)}
+                            className="mt-0.5 accent-sky-500"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-100">{c.nome}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {c.specification && <span className="font-mono text-slate-300">{c.specification}</span>}
+                              {c.unidade && <span className="text-amber-400/80 font-mono"> {c.unidade}</span>}
+                              {c.norma?.codigo && <span className="text-slate-500"> · {c.norma.codigo}</span>}
+                            </p>
+                          </div>
+                        </label>
+                      ))
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-800/60">
+                  <span className="text-xs text-slate-400">
+                    {catalogSelected.size > 0 ? `${catalogSelected.size} selecionada(s)` : 'Nenhuma selecionada'}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowCatalog(false)}
+                      className="rounded-full button-secondary px-4 py-2 text-sm font-semibold text-slate-300"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleAddFromCatalog}
+                      disabled={adicionando || catalogSelected.size === 0}
+                      className="rounded-full button-primary px-5 py-2 text-sm font-semibold shadow-lg shadow-sky-500/20 disabled:opacity-60"
+                    >
+                      {adicionando ? 'Adicionando...' : 'Adicionar'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -628,26 +722,68 @@ export default function LaudoDetalhe() {
                         </p>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-col gap-2 items-end">
                         {!finalizado ? (
-                          <div className="flex items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-950/90 px-3 py-2">
-                            <span className="text-xs text-slate-400">Resultado</span>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={analise.resultado ?? ''}
-                              onChange={(e) => handleResultadoChange(analise, e.target.value)}
-                              placeholder="0.0"
-                              className="w-24 rounded-xl border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
-                            />
-                            {analise.unidade && (
-                              <span className="text-xs font-mono text-amber-400/80">{analise.unidade}</span>
+                          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/90 px-3 py-2 flex flex-col gap-2 min-w-[180px]">
+                            {analise.medicoes.map((m, idx) => (
+                              <div key={idx} className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-slate-500 w-8 shrink-0">CP {idx + 1}</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={m}
+                                  onChange={(e) => handleMedicaoChange(analise, idx, e.target.value)}
+                                  placeholder="0.0"
+                                  className="w-20 rounded-xl border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
+                                />
+                                {analise.unidade && (
+                                  <span className="text-[11px] font-mono text-amber-400/80">{analise.unidade}</span>
+                                )}
+                                {analise.medicoes.length > 1 && (
+                                  <button
+                                    onClick={() => handleRemoverMedicao(analise, idx)}
+                                    className="text-[11px] text-rose-400 hover:text-rose-300 leading-none"
+                                    title="Remover medição"
+                                  >✕</button>
+                                )}
+                              </div>
+                            ))}
+                            {analise.medicoes.length > 1 && analise.resultado && (
+                              <div className="flex items-center gap-1.5 border-t border-slate-800/60 pt-1.5 mt-0.5">
+                                <span className="text-[11px] text-slate-400 w-8 shrink-0">Méd.</span>
+                                <span className="w-20 text-center text-sm font-mono font-semibold text-sky-300">
+                                  {analise.resultado}
+                                </span>
+                                {analise.unidade && (
+                                  <span className="text-[11px] font-mono text-amber-400/80">{analise.unidade}</span>
+                                )}
+                              </div>
                             )}
+                            <button
+                              onClick={() => handleAdicionarMedicao(analise)}
+                              className="mt-1 text-[11px] font-semibold text-sky-400 hover:text-sky-300 text-left"
+                            >
+                              + Medição
+                            </button>
                           </div>
                         ) : (
-                          <p className="text-sm font-mono font-semibold text-slate-100">
-                            {analise.resultado || '—'}{analise.unidade ? ` ${analise.unidade}` : ''}
-                          </p>
+                          <div className="text-right">
+                            {analise.medicoes.length > 1 ? (
+                              <div className="text-xs text-slate-400 space-y-0.5">
+                                {analise.medicoes.map((m, idx) => (
+                                  <div key={idx}>CP {idx + 1}: <span className="font-mono text-slate-200">{m}</span></div>
+                                ))}
+                                <div className="border-t border-slate-700/60 pt-0.5 font-semibold text-sky-300">
+                                  Méd: <span className="font-mono">{analise.resultado}</span>
+                                  {analise.unidade && <span className="text-amber-400/80 font-mono"> {analise.unidade}</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-sm font-mono font-semibold text-slate-100">
+                                {analise.resultado || '—'}{analise.unidade ? ` ${analise.unidade}` : ''}
+                              </p>
+                            )}
+                          </div>
                         )}
                         {!finalizado && (
                           <button
@@ -694,10 +830,10 @@ export default function LaudoDetalhe() {
                       </div>
                     </div>
                   ) : (
-                    <label className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed aspect-square cursor-pointer transition ${
+                    <div className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed aspect-square transition ${
                       analise.tipo_foto === 'required'
-                        ? 'border-rose-500/50 hover:border-rose-400/70 bg-rose-500/5'
-                        : 'border-slate-700/60 hover:border-sky-500/40 bg-slate-900/40'
+                        ? 'border-rose-500/50 bg-rose-500/5'
+                        : 'border-slate-700/60 bg-slate-900/40'
                     } ${uploadingFoto[analise.id] ? 'opacity-50 pointer-events-none' : ''}`}>
                       <span className="text-2xl mb-1">
                         {uploadingFoto[analise.id] ? '⏳' : '📷'}
@@ -705,18 +841,24 @@ export default function LaudoDetalhe() {
                       <span className={`text-[11px] font-semibold ${analise.tipo_foto === 'required' ? 'text-rose-400' : 'text-slate-500'}`}>
                         {analise.tipo_foto === 'required' ? 'Obrigatória' : 'Opcional'}
                       </span>
-                      <span className="text-[10px] text-slate-500 mt-0.5 text-center px-3 leading-tight line-clamp-2">
+                      <span className="text-[10px] text-slate-500 mt-1 text-center px-3 leading-tight line-clamp-2">
                         {analise.nome}
                       </span>
                       {!finalizado && (
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => e.target.files?.[0] && handleFotoChange(analise, e.target.files[0])}
-                        />
+                        <div className="flex gap-2 mt-2 px-3 w-full">
+                          <label className="flex-1 flex items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 py-1 cursor-pointer text-xs text-sky-400 transition hover:bg-sky-500/20">
+                            📷
+                            <input type="file" accept="image/*" capture="environment" className="hidden"
+                              onChange={e => e.target.files?.[0] && handleFotoChange(analise, e.target.files[0])} />
+                          </label>
+                          <label className="flex-1 flex items-center justify-center rounded-xl border border-slate-700/40 bg-slate-700/20 py-1 cursor-pointer text-xs text-slate-400 transition hover:bg-slate-700/40">
+                            🖼️
+                            <input type="file" accept="image/*" className="hidden"
+                              onChange={e => e.target.files?.[0] && handleFotoChange(analise, e.target.files[0])} />
+                          </label>
+                        </div>
                       )}
-                    </label>
+                    </div>
                   )}
                 </div>
               ))}

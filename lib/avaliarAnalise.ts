@@ -1,3 +1,12 @@
+export function calcularMedia(medicoes: string[]): string | null {
+  const nums = medicoes
+    .map((v) => parseFloat(String(v).replace(',', '.')))
+    .filter((n) => !isNaN(n));
+  if (nums.length === 0) return null;
+  const avg = nums.reduce((s, n) => s + n, 0) / nums.length;
+  return avg % 1 === 0 ? String(avg) : avg.toFixed(2);
+}
+
 export function avaliarStatus(
   resultado: string,
   specification: string

@@ -11,6 +11,7 @@ import {
   listarNormas,
 } from '@/lib/laudosServiceSupabase';
 import LogoAbuhler from '@/components/LogoAbuhler';
+import SpecInput from '@/components/SpecInput';
 
 const TIPO_FOTO_LABEL = {
   required: 'Foto obrigatória',
@@ -291,11 +292,10 @@ export default function AdminAnalises() {
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-300 mb-2">Specification</label>
-                  <input
-                    type="text"
-                    placeholder="ex: ≥150"
+                  <SpecInput
                     value={form.specification}
-                    onChange={(e) => setForm({ ...form, specification: e.target.value })}
+                    onChange={(v) => setForm({ ...form, specification: v })}
+                    placeholder="ex: ≥150"
                     className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:font-sans placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                   />
                 </div>

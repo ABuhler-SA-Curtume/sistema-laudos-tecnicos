@@ -235,31 +235,16 @@ export default function LoginSupabase({ onLoginSuccess }) {
           )}
 
           {modo !== 'confirmar' && modo !== 'recuperar' && modo !== 'recuperar-ok' && (
-            <>
-              <div className="relative my-6">
-                <div className="absolute inset-x-0 top-1/2 h-px bg-slate-700/80" />
-                <p className="relative mx-auto w-fit bg-slate-950 px-3 text-xs uppercase tracking-[0.25em] text-slate-500">ou</p>
-              </div>
-
+            <div className="mt-6 text-center text-sm text-slate-400">
+              {modo === 'login' ? 'Não tem conta?' : 'Já possui conta?'}{' '}
               <button
-                onClick={handleLoginGoogle}
-                disabled={loading}
-                className="w-full rounded-full bg-slate-900/90 border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-800/90 disabled:opacity-60"
+                type="button"
+                onClick={() => setModo(modo === 'login' ? 'registrar' : 'login')}
+                className="text-sky-300 hover:text-sky-200 font-semibold"
               >
-                🔵 Entrar com Google
+                {modo === 'login' ? 'Crie uma agora' : 'Faça login'}
               </button>
-
-              <div className="mt-6 text-center text-sm text-slate-400">
-                {modo === 'login' ? 'Não tem conta?' : 'Já possui conta?'}{' '}
-                <button
-                  type="button"
-                  onClick={() => setModo(modo === 'login' ? 'registrar' : 'login')}
-                  className="text-sky-300 hover:text-sky-200 font-semibold"
-                >
-                  {modo === 'login' ? 'Crie uma agora' : 'Faça login'}
-                </button>
-              </div>
-            </>
+            </div>
           )}
 
           <div className="mt-6 rounded-3xl border border-slate-800/80 bg-slate-900/80 p-3 text-center text-xs text-slate-500">

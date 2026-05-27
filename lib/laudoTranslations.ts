@@ -45,7 +45,7 @@ export const TRADUCOES: Record<LaudoLang, LaudoT> = {
     codigoItem: 'Codigo do item',
     ordemCompra: 'Ordem de compra',
     metragem: 'Metragem',
-    lotes: 'Lotes',
+    lotes: 'Marca',
     analise: 'Analise',
     especificacao: 'Especificacao',
     resultado: 'Resultado',
@@ -73,7 +73,7 @@ export const TRADUCOES: Record<LaudoLang, LaudoT> = {
     codigoItem: 'Item Code',
     ordemCompra: 'Purchase Order',
     metragem: 'Meterage',
-    lotes: 'Lots',
+    lotes: 'Brand',
     analise: 'Analysis',
     especificacao: 'Specification',
     resultado: 'Result',
@@ -138,6 +138,13 @@ const NOMES_EN: Record<string, string> = {
   'ciclos sem trincas': 'Flex Cycles',
   'resistencia a flexao umida': 'Wet Flex Endurance',
 
+  // Crockmeter (ISO 105-X12)
+  'crockmeter seco carnal': 'Dry Crockmeter (Flesh Side)',
+  'crockmeter seco': 'Dry Crockmeter',
+  'crockmeter umido': 'Wet Crockmeter',
+  'crockmeter a seco': 'Dry Crockmeter',
+  'crockmeter a umido': 'Wet Crockmeter',
+
   // Fricção / rubbing
   'friccao umida': 'Wet Rub Fastness',
   'friccao seca': 'Dry Rub Fastness',
@@ -158,6 +165,11 @@ const NOMES_EN: Record<string, string> = {
   'resistencia ao suor': 'Perspiration Resistance',
   'resistencia a agua': 'Water Resistance',
   'impermeabilidade': 'Water Impermeability',
+  "gota d'agua": 'Water Drop Test',
+  'gota dagua': 'Water Drop Test',
+  'gota de agua': 'Water Drop Test',
+  'teste gota dagua': 'Water Drop Test',
+  "teste gota d'agua": 'Water Drop Test',
 
   // Adesão / acabamento
   'adesao do acabamento': 'Finish Adhesion',
@@ -207,18 +219,33 @@ export function traduzirNomeAnalise(nome: string, lang: LaudoLang): string {
 }
 
 // Dicionário de unidades de medida PT → EN
+// Frases mais longas devem vir primeiro para o match parcial funcionar corretamente
 const UNIDADES_EN: Record<string, string> = {
+  // Compostos específicos (longas primeiro)
+  'ciclos escala de cinzas': 'cycles grey scale',
+  'ciclos sem trincas': 'cycles without cracks',
+  'flexoes sem trincas': 'flexions without cracks',
+  // Frases simples
   'escala de cinzas': 'Grey Scale',
-  'ciclos sem trincas': 'Cycles',
-  'flexoes sem trincas': 'Cycles',
-  'flexoes': 'Flexions',
-  'ciclos': 'Cycles',
-  'vezes': 'Times',
-  'passadas': 'Strokes',
+  'flexoes': 'flexions',
+  'ciclos': 'cycles',
+  'vezes': 'times',
+  'passadas': 'strokes',
+  'graus': 'degrees',
+  'horas': 'hours',
+  'minutos': 'minutes',
 };
 
 export function traduzirUnidade(unidade: string, lang: LaudoLang): string {
   if (lang === 'pt-BR' || !unidade) return unidade;
   const key = norm(unidade);
-  return UNIDADES_EN[key] ?? unidade;
+  if (UNIDADES_EN[key]) return UNIDADES_EN[key];
+  // Substituição parcial para unidades compostas (ex: "10 ciclos escala de cinzas")
+  // Ordena por comprimento decrescente para frases longas terem prioridade
+  const sorted = Object.entries(UNIDADES_EN).sort((a, b) => b[0].length - a[0].length);
+  let result = key;
+  for (const [pt, en] of sorted) {
+    result = result.replace(pt, en);
+  }
+  return result !== key ? result : unidade;
 }

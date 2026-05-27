@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: "Sistema profissional de gestão de laudos técnicos com interface escura e moderna.",
   icons: {
     icon: '/logo-abuhler.png',
-    apple: '/logo-abuhler.png',
+    apple: '/apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,

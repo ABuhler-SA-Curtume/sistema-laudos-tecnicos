@@ -10,6 +10,7 @@ import {
   deletarNorma,
 } from '@/lib/laudosServiceSupabase';
 import LogoAbuhler from '@/components/LogoAbuhler';
+import SpecInput from '@/components/SpecInput';
 
 export default function AdminNormas() {
   const { user, loading } = useAuth();
@@ -261,11 +262,10 @@ export default function AdminNormas() {
                   <label className="block text-sm font-semibold text-slate-300 mb-2">
                     Specification padrão
                   </label>
-                  <input
-                    type="text"
-                    placeholder="ex: ≥150 ou >3.5"
+                  <SpecInput
                     value={specification}
-                    onChange={(e) => setSpecification(e.target.value)}
+                    onChange={setSpecification}
+                    placeholder="ex: ≥150 ou >3.5"
                     className="input-dark w-full rounded-2xl px-4 py-3 text-sm font-mono placeholder:text-slate-500 placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-sky-400/70"
                   />
                 </div>

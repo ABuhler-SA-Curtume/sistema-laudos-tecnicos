@@ -17,6 +17,7 @@ type Analise = {
   resultado: string;
   status_analise: string | null;
   foto_url: string | null;
+  medicoes: string[];
 };
 
 type Laudo = {
@@ -55,6 +56,12 @@ export default function ImprimirLaudo() {
   function unidadeOf(a: Analise): string {
     return a.unidade || normaMap[a.norma] || '';
   }
+
+  const parseMeds = (a: Analise): string[] =>
+    (Array.isArray(a.medicoes) ? a.medicoes : []).filter((m) => String(m).trim() !== '');
+
+  const maxCPs = analises.reduce((mx, a) => Math.max(mx, parseMeds(a).length), 0);
+  const usaCPs = maxCPs > 1;
 
   async function baixarPDF(modo: 'download' | 'share' = 'download') {
     if (!laudo) return;
@@ -161,13 +168,37 @@ export default function ImprimirLaudo() {
       doc.setFont('helvetica','bold'); doc.setFontSize(7); tc(107,114,128);
       doc.text(t.analisesRealizadas, M, y); y += 3;
 
-      // nome=44 spec=26 res=16 unit=26 norma=38 status=36 → total=186
-      const COLS = [44,26,16,26,38,36];
+      // Layout dinâmico baseado no número máximo de CPs
+      const pdfParseMeds = (a: Analise) =>
+        (Array.isArray(a.medicoes) ? a.medicoes : []).filter((m: string) => String(m).trim() !== '');
+      const pdfMaxCPs = analises.reduce((mx, a) => Math.max(mx, pdfParseMeds(a).length), 0);
+      const pdfUsaCPs = pdfMaxCPs > 1;
+
+      let COLS: number[];
+      let HEADERS: string[];
+
+      if (pdfUsaCPs) {
+        // nome=38 spec=20 CP*N médiaCol=14 unit=18 normaCol=dynamic status=22
+        const perCpW = Math.max(10, Math.floor(46 / pdfMaxCPs));
+        const normaW = Math.max(20, 46 - perCpW * pdfMaxCPs + 28);
+        COLS = [38, 20, ...Array(pdfMaxCPs).fill(perCpW), 14, 18, normaW, 22];
+        HEADERS = [
+          t.analise, t.especificacao,
+          ...Array.from({ length: pdfMaxCPs }, (_, ci) => `CP ${ci + 1}`),
+          lang === 'en-US' ? 'Avg' : 'Média',
+          t.unidade, t.norma, '',
+        ];
+      } else {
+        // nome=44 spec=26 res=16 unit=26 norma=38 status=36 → total=186
+        COLS = [44, 26, 16, 26, 38, 36];
+        HEADERS = [t.analise, t.especificacao, t.resultado, t.unidade, t.norma, t.status];
+      }
+
       const XS = COLS.map((_,i) => M + COLS.slice(0,i).reduce((s,v)=>s+v,0));
 
       f(37,99,235); doc.rect(M, y, CW, 7, 'F');
       doc.setFont('helvetica','bold'); doc.setFontSize(8); tc(255,255,255);
-      [t.analise, t.especificacao, t.resultado, t.unidade, t.norma, t.status].forEach((h,i) => {
+      HEADERS.forEach((h, i) => {
         doc.text(h, i===0 ? XS[i]+2 : XS[i]+COLS[i]/2, y+5, { align: i===0 ? 'left':'center' });
       });
       y += 7;
@@ -184,26 +215,64 @@ export default function ImprimirLaudo() {
 
         const TY = y+4.3;
         doc.setFontSize(8); tc(17,24,39);
-        doc.setFont('helvetica','normal'); doc.text(pdfTrunc(traduzirNomeAnalise(a.nome, lang), 24), XS[0]+2, TY);
-        pdfSpecText(doc, a.specification||'', XS[1]+COLS[1]/2, TY, 13);
-        doc.setFont('courier','bold'); tc(17,24,39); doc.text(a.resultado||'-', XS[2]+COLS[2]/2, TY, {align:'center'});
-        doc.setFont('helvetica','normal'); doc.setFontSize(7); tc(107,114,128); doc.text(traduzirUnidade(unidadeOf(a), lang)||'-', XS[3]+COLS[3]/2, TY, {align:'center'}); doc.setFontSize(8);
-        doc.setFont('helvetica','normal'); tc(17,24,39); doc.text(pdfTrunc(a.norma||'-',22), XS[4]+COLS[4]/2, TY, {align:'center'});
-        if (s) drawBadge(SLBL[s], SBG[s], STC[s], XS[5]+COLS[5]/2, y+3.25);
-        else { tc(156,163,175); doc.text('-', XS[5]+COLS[5]/2, TY, {align:'center'}); }
+        doc.setFont('helvetica','normal');
+        doc.text(pdfTrunc(traduzirNomeAnalise(a.nome, lang), pdfUsaCPs ? 20 : 24), XS[0]+2, TY);
+        pdfSpecText(doc, a.specification||'', XS[1]+COLS[1]/2, TY, 11);
+
+        if (pdfUsaCPs) {
+          const meds = pdfParseMeds(a);
+          // CP individual columns
+          for (let ci = 0; ci < pdfMaxCPs; ci++) {
+            const val = meds[ci] || '—';
+            doc.setFont('courier','normal'); doc.setFontSize(7); tc(17,24,39);
+            doc.text(val, XS[2+ci]+COLS[2+ci]/2, TY, { align:'center' });
+          }
+          // Média (bold, blue)
+          const mediaIdx = 2 + pdfMaxCPs;
+          doc.setFont('courier','bold'); doc.setFontSize(8); tc(29,78,216);
+          doc.text(a.resultado||'—', XS[mediaIdx]+COLS[mediaIdx]/2, TY, { align:'center' });
+          // Unidade
+          const unitIdx = mediaIdx + 1;
+          doc.setFont('helvetica','normal'); doc.setFontSize(7); tc(107,114,128);
+          doc.text(traduzirUnidade(unidadeOf(a), lang)||'—', XS[unitIdx]+COLS[unitIdx]/2, TY, { align:'center' });
+          // Norma
+          const normaIdx = unitIdx + 1;
+          doc.setFontSize(7); tc(17,24,39);
+          doc.text(pdfTrunc(a.norma||'—', 16), XS[normaIdx]+COLS[normaIdx]/2, TY, { align:'center' });
+          // Status — ícone vetorial ✓/✗ (unicode não suportado em fonts built-in do jsPDF)
+          const iconIdx = normaIdx + 1;
+          const iconCx = XS[iconIdx] + COLS[iconIdx] / 2;
+          const iconCy = y + 3.25;
+          if (s === 'approved') {
+            pdfDrawCheck(doc, iconCx, iconCy, [21,128,61]);
+          } else if (s === 'rejected') {
+            pdfDrawCross(doc, iconCx, iconCy, [220,38,38]);
+          } else {
+            doc.setFont('helvetica','normal'); doc.setFontSize(8); tc(156,163,175);
+            doc.text('-', iconCx, TY, { align:'center' });
+          }
+          d(229,231,235); doc.setLineWidth(0.2); // restaura estado
+        } else {
+          doc.setFont('courier','bold'); tc(17,24,39); doc.text(a.resultado||'-', XS[2]+COLS[2]/2, TY, {align:'center'});
+          doc.setFont('helvetica','normal'); doc.setFontSize(7); tc(107,114,128); doc.text(traduzirUnidade(unidadeOf(a), lang)||'-', XS[3]+COLS[3]/2, TY, {align:'center'}); doc.setFontSize(8);
+          doc.setFont('helvetica','normal'); tc(17,24,39); doc.text(pdfTrunc(a.norma||'-',22), XS[4]+COLS[4]/2, TY, {align:'center'});
+          if (s) drawBadge(SLBL[s], SBG[s], STC[s], XS[5]+COLS[5]/2, y+3.25);
+          else { tc(156,163,175); doc.text('-', XS[5]+COLS[5]/2, TY, {align:'center'}); }
+        }
 
         y += 6.5;
       }
 
       // linha de totais
       if (y+6.5 > 282) { doc.addPage(); y = M; }
-      const FS = COLS.slice(0,5).reduce((a,b)=>a+b,0);
+      const lastColW = COLS[COLS.length - 1];
+      const FS = COLS.slice(0, COLS.length - 1).reduce((a,b) => a+b, 0);
       f(243,244,246); d(229,231,235); doc.setLineWidth(0.2);
       doc.rect(M, y, FS, 6.5, 'FD');
-      doc.rect(M+FS, y, COLS[5], 6.5, 'FD');
+      doc.rect(M+FS, y, lastColW, 6.5, 'FD');
       doc.setFont('helvetica','bold'); doc.setFontSize(8); tc(17,24,39);
       doc.text(t.resultadoFinal(aprovados, reprovados), M+2, y+4.3);
-      drawBadge(SLBL[sg], SBG[sg], STC[sg], M+FS+COLS[5]/2, y+3.25);
+      drawBadge(SLBL[sg], SBG[sg], STC[sg], M+FS+lastColW/2, y+3.25);
       y += 6.5 + 8;
 
       // ─── OBSERVAÇÕES ───────────────────────────────────────────────────────
@@ -226,21 +295,21 @@ export default function ImprimirLaudo() {
         doc.setFont('helvetica','bold'); doc.setFontSize(7); tc(107,114,128);
         doc.text(t.registroFotografico, M, y); y += 5;
 
-        const FGAP = 5, FW = (CW - 2*FGAP) / 3, FH = FW;
+        const FGAP = 4, FW = (CW - 3*FGAP) / 4, FH = FW;
         const fotoImgs = await Promise.all(
           fotosAnalises.map(a => pdfLoadImage(a.foto_url!, { maxW: 900, format: 'jpeg', quality: 0.82 }))
         );
 
-        for (let i = 0; i < fotosAnalises.length; i += 3) {
+        for (let i = 0; i < fotosAnalises.length; i += 4) {
           const rowH = FH + 8;
           if (y + rowH > 282) { doc.addPage(); y = M; }
-          for (let j = 0; j < 3 && i+j < fotosAnalises.length; j++) {
+          for (let j = 0; j < 4 && i+j < fotosAnalises.length; j++) {
             const img = fotoImgs[i+j];
             const a = fotosAnalises[i+j];
             const x = M + j*(FW+FGAP);
             if (img) doc.addImage(img, 'JPEG', x, y, FW, FH);
             doc.setFont('helvetica','normal'); doc.setFontSize(6.5); tc(107,114,128);
-            doc.text(pdfTrunc(traduzirNomeAnalise(a.nome, lang), 18), x + FW/2, y + FH + 4, { align: 'center' });
+            doc.text(pdfTrunc(traduzirNomeAnalise(a.nome, lang), 14), x + FW/2, y + FH + 4, { align: 'center' });
           }
           y += rowH + 3;
         }
@@ -477,10 +546,17 @@ export default function ImprimirLaudo() {
               <tr className="bg-blue-600 text-white">
                 <th className="px-3 py-2 text-left font-semibold">{t.analise}</th>
                 <th className="px-3 py-2 text-center font-semibold">{t.especificacao}</th>
-                <th className="px-3 py-2 text-center font-semibold">{t.resultado}</th>
+                {usaCPs
+                  ? Array.from({ length: maxCPs }, (_, ci) => (
+                      <th key={ci} className="px-2 py-2 text-center font-semibold text-xs">CP {ci + 1}</th>
+                    ))
+                  : null}
+                {usaCPs
+                  ? <th className="px-2 py-2 text-center font-semibold text-xs">{lang === 'en-US' ? 'Avg' : 'Média'}</th>
+                  : <th className="px-3 py-2 text-center font-semibold">{t.resultado}</th>}
                 <th className="px-3 py-2 text-center font-semibold">{t.unidade}</th>
                 <th className="px-3 py-2 text-center font-semibold">{t.norma}</th>
-                <th className="px-3 py-2 text-center font-semibold">{t.status}</th>
+                <th className="px-3 py-2 text-center font-semibold"></th>
               </tr>
             </thead>
             <tbody>
@@ -506,29 +582,35 @@ export default function ImprimirLaudo() {
                     <td className="px-3 py-2 border border-gray-200 text-center font-mono">
                       {a.specification || '—'}
                     </td>
-                    <td className="px-3 py-2 border border-gray-200 text-center font-mono font-bold">
-                      {a.resultado || '—'}
-                    </td>
-                    <td className="px-3 py-2 border border-gray-200 text-center text-gray-600 font-mono">
+                    {usaCPs
+                      ? (() => {
+                          const meds = parseMeds(a);
+                          return Array.from({ length: maxCPs }, (_, ci) => (
+                            <td key={ci} className="px-1 py-2 border border-gray-200 text-center font-mono text-xs">
+                              {meds[ci] || '—'}
+                            </td>
+                          ));
+                        })()
+                      : null}
+                    {usaCPs
+                      ? <td className="px-2 py-2 border border-gray-200 text-center font-mono font-bold text-blue-700">
+                          {a.resultado || '—'}
+                        </td>
+                      : <td className="px-3 py-2 border border-gray-200 text-center font-mono font-bold">
+                          {a.resultado || '—'}
+                        </td>}
+                    <td className="px-3 py-2 border border-gray-200 text-center text-gray-600 font-mono text-xs">
                       {traduzirUnidade(unidadeOf(a), lang) || '—'}
                     </td>
-                    <td className="px-3 py-2 border border-gray-200 text-center text-gray-500">
+                    <td className="px-3 py-2 border border-gray-200 text-center text-gray-500 text-xs">
                       {a.norma || '—'}
                     </td>
                     <td className="px-3 py-2 border border-gray-200 text-center">
-                      {status ? (
-                        <span
-                          className={`font-bold text-xs px-2 py-0.5 rounded ${
-                            status === 'approved'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {statusLabel[status]}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
+                      {status === 'approved'
+                        ? <span style={{ color: '#15803d', fontWeight: 700, fontSize: 14 }}>✓</span>
+                        : status === 'rejected'
+                        ? <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 14 }}>✗</span>
+                        : <span className="text-gray-400">—</span>}
                     </td>
                   </tr>
                 );
@@ -536,7 +618,7 @@ export default function ImprimirLaudo() {
             </tbody>
             <tfoot>
               <tr className="bg-gray-100 font-semibold">
-                <td className="px-3 py-2 border border-gray-200" colSpan={5}>
+                <td className="px-3 py-2 border border-gray-200" colSpan={usaCPs ? maxCPs + 5 : 5}>
                   {t.resultadoFinal(aprovados, reprovados)}
                 </td>
                 <td className="px-3 py-2 border border-gray-200 text-center">
@@ -563,7 +645,7 @@ export default function ImprimirLaudo() {
             <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
               {t.registroFotografico}
             </h2>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-3">
               {analises.filter(a => a.foto_url).map((a) => (
                 <div key={a.id} className="text-center">
                   <img
@@ -571,7 +653,7 @@ export default function ImprimirLaudo() {
                     alt={a.nome}
                     className="w-full aspect-square object-cover rounded border border-gray-200"
                   />
-                  <p className="text-xs text-gray-600 mt-1 font-medium">
+                  <p className="text-xs text-gray-600 mt-1 font-medium truncate">
                     {traduzirNomeAnalise(a.nome, lang)}
                   </p>
                 </div>
@@ -612,6 +694,22 @@ export default function ImprimirLaudo() {
       </div>
     </>
   );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pdfDrawCheck(doc: any, cx: number, cy: number, rgb: [number,number,number]) {
+  doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+  doc.setLineWidth(0.75);
+  doc.lines([[1.3, 1.7]], cx - 1.9, cy - 0.2);
+  doc.lines([[2.6, -3.1]], cx - 0.6, cy + 1.5);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pdfDrawCross(doc: any, cx: number, cy: number, rgb: [number,number,number]) {
+  doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+  doc.setLineWidth(0.75);
+  doc.lines([[3.8, 3.6]], cx - 1.9, cy - 1.8);
+  doc.lines([[-3.8, 3.6]], cx + 1.9, cy - 1.8);
 }
 
 function pdfTrunc(str: string, max: number): string {
